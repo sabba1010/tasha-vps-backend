@@ -210,12 +210,19 @@ app.get("/icon-data", async (req, res) => {
 // ---------------------------------------
 // LOCAL DEV SERVER (ONLY FOR LOCAL)
 // ---------------------------------------
-if (process.env.NODE_ENV !== "production") {
-  const PORT = process.env.PORT || 3200;
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-  });
-}
+// if (process.env.NODE_ENV !== "production") {
+//   const PORT = process.env.PORT || 3200;
+//   app.listen(PORT, () => {
+//     console.log(`Server running on port ${PORT}`);
+//   });
+// }
+const PORT = process.env.PORT || 3200;
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
+
 
 // বাংলাদেশ টাইমে প্রতিদিন রাত ১২টায় (মিডনাইটে) রিসেট
 cron.schedule(
