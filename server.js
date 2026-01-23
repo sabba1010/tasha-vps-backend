@@ -245,7 +245,7 @@ cron.schedule(
 // ---------------------------------------
 // EXPORT FOR VERCEL
 // ---------------------------------------
-module.exports = app;
+// module.exports = app;
 
 
 // const cron = require("node-cron");
