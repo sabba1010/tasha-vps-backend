@@ -34,7 +34,7 @@ router.post("/create", async (req, res) => {
       amount: String(amount), // Korapay requires string
       currency: "NGN",
       reference,
-      redirect_url: `http://localhost:3000/payment?reference=${reference}`,
+      redirect_url: `https://dashing-zuccutto-cb094a.netlify.app/payment?reference=${reference}`,
       customer: {
         email, // ✅ LOGIN USER EMAIL
       },

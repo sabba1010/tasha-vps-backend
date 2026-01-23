@@ -53,7 +53,7 @@ router.get("/stats", async (req, res) => {
       success: true,
       data: {
         referralCode,
-        referralLink: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/register?ref=${referralCode}`,
+        referralLink: `${process.env.FRONTEND_URL || 'https://dashing-zuccutto-cb094a.netlify.app'}/register?ref=${referralCode}`,
         referredBuyers,
         referredSellers,
         totalReferrals: referredBuyers + referredSellers,
@@ -158,7 +158,7 @@ router.get("/link", async (req, res) => {
     }
 
     const referralCode = user.referralCode;
-    const referralLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/register?ref=${referralCode}`;
+    const referralLink = `${process.env.FRONTEND_URL || 'https://dashing-zuccutto-cb094a.netlify.app'}/register?ref=${referralCode}`;
 
     res.json({
       success: true,
@@ -200,7 +200,7 @@ router.get("/user/:userId", async (req, res) => {
         userId,
         email: user.email,
         referralCode,
-        referralLink: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/register?ref=${referralCode}`,
+        referralLink: `${process.env.FRONTEND_URL || 'https://dashing-zuccutto-cb094a.netlify.app'}/register?ref=${referralCode}`,
         referredBuyers,
         referredSellers,
         totalReferrals: referredBuyers + referredSellers,
