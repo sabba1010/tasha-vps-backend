@@ -77,7 +77,9 @@ const purchaseRoute = require("./routes/purchase");
 const refarelRoute = require("./routes/refarel");
 const ratingRoute = require("./routes/rating");
 const adminsetingRoute = require("./routes/adminseting");
+const adminChat = require("./routes/adminChat");
 
+app.use("/api/adminchat", adminChat);
 app.use("/flutterwave", flutterwaveRoutes);
 app.use("/korapay", korapayRoutes);
 app.use("/api/user", userRoute);
