@@ -38,7 +38,7 @@ router.post("/create", async (req, res) => {
     const payload = {
       tx_ref,
       amount,
-      currency: "NGN",
+      currency: "USD",
       redirect_url: `https://dashing-zuccutto-cb094a.netlify.app/payment?tx_ref=${tx_ref}`,
       customer: {
         email, // REQUIRED BY FLUTTERWAVE
