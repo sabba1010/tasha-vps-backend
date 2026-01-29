@@ -273,6 +273,22 @@ router.patch("/update-status/:id", async (req, res) => {
         const amount = purchase.price || purchase.totalPrice || 0;
         
         await purchaseCollection.updateOne({ _id: new ObjectId(id) }, { $set: { status: "completed" } }, { session });
+
+        // Update the product document to reflect completion so frontend shows 'Completed'
+        try {
+          const prodId = purchase.productId ? new ObjectId(purchase.productId) : null;
+          if (prodId) {
+            await productsCollection.updateOne(
+              { _id: prodId },
+              { $set: { status: "completed", updatedAt: new Date() } },
+              { session }
+            );
+          }
+        } catch (err) {
+          // If product update fails, continue but log the error
+          console.error('Failed to update product status after purchase completion:', err);
+        }
+
         await userCollection.updateOne({ email: sellerEmail }, { $inc: { balance: amount * 0.8 } }, { session });
         await userCollection.updateOne({ email: "admin@gmail.com" }, { $inc: { balance: amount * 0.2 } }, { session });
       });
