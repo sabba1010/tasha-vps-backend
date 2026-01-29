@@ -200,7 +200,7 @@ router.post("/post", async (req, res) => {
 
     const productUpdatePromises = cartItems.map(async (item) => {
       const pId = item.productId ? new ObjectId(item.productId) : new ObjectId(item._id);
-      await productsCollection.updateOne({ _id: pId }, { $set: { status: "ongoing" } });
+      await productsCollection.updateOne({ _id: pId }, { $set: { status: "Sold" } });
     });
     await Promise.all(productUpdatePromises);
 
