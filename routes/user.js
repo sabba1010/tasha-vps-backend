@@ -849,7 +849,7 @@ router.post("/register", async (req, res) => {
     // default fields
     userData.balance = userData.balance || 0;
     userData.role = userData.role || "buyer";
-    userData.salesCredit = userData.salesCredit || 10;
+    userData.salesCredit = 0;  // Start with 0 credit for all new users
 
     // referral pending system (NO AUTO BONUS)
     userData.referredBy = referredByCode || null;
@@ -998,11 +998,27 @@ router.post("/getall/:userId", async (req, res) => {
       if (user.balance < deductAmount)
         throw new Error("Insufficient balance");
 
-      const update = {
-        $inc: { balance: -deductAmount, salesCredit: creditAmount },
+      // Define sales credit for each plan
+      const planCredits = {
+        free: 0,
+        basic: 20,
+        business: 30,
+        premium: 40
       };
 
-      if (newPlan) update.$set = { subscribedPlan: newPlan };
+      const update = {
+        $inc: { balance: -deductAmount }
+      };
+
+      // If newPlan is provided, set salesCredit based on plan, otherwise increment
+      if (newPlan && planCredits.hasOwnProperty(newPlan.toLowerCase())) {
+        update.$set = { 
+          subscribedPlan: newPlan,
+          salesCredit: planCredits[newPlan.toLowerCase()]
+        };
+      } else if (creditAmount !== undefined) {
+        update.$inc.salesCredit = creditAmount;
+      }
 
       await users.updateOne(
         { _id: new ObjectId(userId) },
@@ -1016,11 +1032,101 @@ router.post("/getall/:userId", async (req, res) => {
       );
     });
 
-    res.json({ success: true, newBalance: updatedUser.balance });
+    res.json({ success: true, newBalance: updatedUser.balance, newSalesCredit: updatedUser.salesCredit });
   } catch (error) {
     res.status(400).json({ message: error.message });
   } finally {
     await session.endSession();
+  }
+});
+
+
+// ================= UPGRADE TO SELLER PLAN (WITH SALES CREDIT) =================
+// Plans:
+// - free: salesCredit = 0
+// - basic: salesCredit = 20
+// - business: salesCredit = 30
+// - premium: salesCredit = 50 per day
+router.post("/upgrade-plan", async (req, res) => {
+  try {
+    const { userId, plan, deductAmount } = req.body;
+
+    // Validate plan
+    const validPlans = ["free", "basic", "business", "premium"];
+    if (!plan || !validPlans.includes(plan.toLowerCase())) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid plan. Must be one of: ${validPlans.join(", ")}`
+      });
+    }
+
+    const normalizedPlan = plan.toLowerCase();
+
+    // Define sales credit for each plan
+    const planCredits = {
+      free: 0,
+      basic: 20,
+      business: 30,
+      premium: 40
+    };
+
+    const user = await users.findOne({ _id: new ObjectId(userId) });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
+    }
+
+    // Check balance if deductAmount is provided (for paid plans)
+    const currentBalance = Number(user.balance) || 0;
+    let newBalance = currentBalance;
+
+    if (deductAmount && deductAmount > 0) {
+      if (currentBalance < deductAmount) {
+        return res.status(400).json({
+          success: false,
+          message: "Insufficient balance for this plan"
+        });
+      }
+      newBalance = currentBalance - deductAmount;
+    }
+
+    const salesCredit = planCredits[normalizedPlan];
+
+    // Update user with new plan and sales credit
+    const result = await users.updateOne(
+      { _id: new ObjectId(userId) },
+      {
+        $set: {
+          subscribedPlan: normalizedPlan,
+          salesCredit: salesCredit,
+          balance: newBalance,
+          planUpdatedAt: new Date()
+        }
+      }
+    );
+
+    if (result.modifiedCount > 0) {
+      res.json({
+        success: true,
+        message: `Plan upgraded to ${normalizedPlan} successfully`,
+        plan: normalizedPlan,
+        salesCredit: salesCredit,
+        newBalance: newBalance
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: "Failed to upgrade plan"
+      });
+    }
+  } catch (error) {
+    console.error("Upgrade plan error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 });
 
