@@ -226,23 +226,26 @@ app.listen(PORT, () => {
 
 
 
-// বাংলাদেশ টাইমে প্রতিদিন রাত ১২টায় (মিডনাইটে) রিসেট
+
+// Nigeria টাইমে প্রতিদিন রাত ১২টায় (মিডনাইটে) রিসেট
 cron.schedule(
-  "0 0 * * *",
+  "0 0 * * *", // every day at 12:00 AM
   async () => {
     try {
       const result = await userCollection.updateMany(
-        {}, // সব ইউজার
+        {}, // all users
         { $set: { salesCredit: 10 } }
       );
+      console.log("✅ Daily sales credit reset (Nigeria time)");
     } catch (error) {
       console.error("❌ Error in daily credit reset:", error);
     }
   },
   {
-    timezone: "Asia/Dhaka", 
+    timezone: "Africa/Lagos", // Nigeria (WAT)
   }
 );
+
 
 // ---------------------------------------
 // EXPORT FOR VERCEL
