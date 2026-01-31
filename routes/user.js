@@ -31,7 +31,7 @@
 //     // Default fields
 //     if (!userData.balance) userData.balance = 0;
 //     if (!userData.role) userData.role = "buyer";
-    
+
 //     const result = await users.insertOne(userData);
 //     res.send(result);
 //   } catch (e) {
@@ -55,7 +55,7 @@
 //   const user = await users.findOne({ email });
 //   if (!user) return res.status(404).json({ success: false, message: "User not found" });
 //   if (user.password !== password) return res.status(400).json({ success: false, message: "Wrong password" });
-  
+
 //   res.json({ success: true, message: "Login successful", user });
 // });
 
@@ -64,7 +64,7 @@
 
 //     try {
 //         const { email, amount } = req.body;
-        
+
 //         // ১. ইউজার খোঁজা
 //         const user = await users.findOne({ email: email });
 //         if (!user) {
@@ -289,7 +289,7 @@
 //   const user = await users.findOne({ email });
 //   if (!user) return res.status(404).json({ success: false, message: "User not found" });
 //   if (user.password !== password) return res.status(400).json({ success: false, message: "Wrong password" });
-  
+
 //   res.json({ success: true, message: "Login successful", user });
 // });
 
@@ -811,53 +811,53 @@ run();
 
 
 // ================= REGISTER =================
+// ================= REGISTER =================
 router.post("/register", async (req, res) => {
   try {
+    console.log("📝 [REGISTER] Request received:", {
+      name: req.body.name,
+      email: req.body.email,
+      phone: req.body.phone,
+      referredBy: req.body.referredBy
+    });
+
     const userData = req.body;
     const referredByCode = userData.referredBy;
 
-    // ===== CHECK IF NAME (USERNAME) ALREADY EXISTS (CASE-INSENSITIVE) =====
+    // username check (case-insensitive)
     if (userData.name) {
-      const existingName = await users.findOne({ 
-        name: { $regex: `^${userData.name}$`, $options: "i" } 
+      const existingName = await users.findOne({
+        name: { $regex: `^${userData.name}$`, $options: "i" }
       });
       if (existingName) {
-        return res.status(409).json({
-          success: false,
-          message: "The username has been taken!"
-        });
+        return res.status(409).json({ success: false, message: "The username has been taken!" });
       }
     }
 
-    // ===== CHECK IF EMAIL ALREADY EXISTS =====
+    // email check
     const existingEmail = await users.findOne({ email: userData.email });
     if (existingEmail) {
-      return res.status(409).json({
-        success: false,
-        message: "The email has been taken!"
-      });
+      return res.status(409).json({ success: false, message: "The email has been taken!" });
     }
 
-    // generate referral code if missing
+    // generate referral code
     if (!userData.referralCode) {
-      userData.referralCode = Math.random()
-        .toString(36)
-        .substring(2, 10)
-        .toUpperCase();
+      userData.referralCode = Math.random().toString(36).substring(2, 10).toUpperCase();
     }
 
-    // default fields
+    // --- ডিফল্ট সেটিংস ---
     userData.balance = userData.balance || 0;
     userData.role = userData.role || "buyer";
-    userData.salesCredit = 0;  // Start with 0 credit for all new users
+    userData.salesCredit = 0;        // শুরুতে জিরো ক্রেডিট
+    userData.subscribedPlan = null;  // শুরুতে কোনো প্ল্যান থাকবে না
+    userData.createdAt = new Date();
 
-    // referral pending system (NO AUTO BONUS)
     userData.referredBy = referredByCode || null;
     userData.referralStatus = referredByCode ? "pending" : null;
 
     const result = await users.insertOne(userData);
 
-    // Create referral record if referred by someone
+    // Referral logic (যদি থাকে)
     if (referredByCode && result.insertedId) {
       try {
         const referrer = await users.findOne({ referralCode: referredByCode });
@@ -866,23 +866,16 @@ router.post("/register", async (req, res) => {
           await referralsCollection.insertOne({
             referrerId: referrer._id,
             referrerEmail: referrer.email,
-            referrerName: referrer.name || "Unknown",
             refereeId: result.insertedId,
             refereeEmail: userData.email,
-            refereeName: userData.name || "Unknown",
-            refereeRole: userData.role || "buyer",
             referralCode: referredByCode,
-            status: "pending", // Requires admin approval
+            status: "pending",
             amount: 5,
-            createdAt: new Date(),
-            approvedAt: null,
-            rejectedAt: null
+            createdAt: new Date()
           });
-          console.log(`Referral record created for: ${referrer.email} → ${userData.email}`);
         }
       } catch (refErr) {
-        console.error("Error creating referral record:", refErr);
-        // Don't fail registration if referral record creation fails
+        console.error("Referral Record Error:", refErr);
       }
     }
 
@@ -899,6 +892,8 @@ router.post("/register", async (req, res) => {
 
 // ================= LOGIN =================
 router.post("/login", async (req, res) => {
+  console.log("🔐 [LOGIN] Attempt for:", req.body.email);
+
   const { email, password } = req.body;
 
   const user = await users.findOne({ email });
@@ -982,6 +977,7 @@ router.post("/become-seller", async (req, res) => {
 
 
 // ================= PLAN UPDATE =================
+// ================= PLAN UPDATE =================
 router.post("/getall/:userId", async (req, res) => {
   const { userId } = req.params;
   const { deductAmount, creditAmount, newPlan } = req.body;
@@ -995,29 +991,32 @@ router.post("/getall/:userId", async (req, res) => {
       );
 
       if (!user) throw new Error("User not found");
-      if (user.balance < deductAmount)
-        throw new Error("Insufficient balance");
 
-      // Define sales credit for each plan
+      // খরচ চেক করা
+      const cost = Number(deductAmount) || 0;
+      if (user.balance < cost) throw new Error("Insufficient balance");
+
+      // এখানে ক্রেডিটগুলো সেট করা আছে
       const planCredits = {
-        free: 0,
+        free: 10,     // ফ্রি প্ল্যান নিলে ১০ ক্রেডিট পাবে
         basic: 20,
         business: 30,
         premium: 40
       };
 
       const update = {
-        $inc: { balance: -deductAmount }
+        $inc: { balance: -cost }
       };
 
-      // If newPlan is provided, set salesCredit based on plan, otherwise increment
+      // যদি নতুন প্ল্যান আসে, তবে সেই প্ল্যানের নির্দিষ্ট ক্রেডিট সেট হবে
       if (newPlan && planCredits.hasOwnProperty(newPlan.toLowerCase())) {
-        update.$set = { 
-          subscribedPlan: newPlan,
+        update.$set = {
+          subscribedPlan: newPlan.toLowerCase(),
           salesCredit: planCredits[newPlan.toLowerCase()]
         };
       } else if (creditAmount !== undefined) {
-        update.$inc.salesCredit = creditAmount;
+        // যদি আলাদা করে ক্রেডিট পাঠানো হয়
+        update.$inc = { ...update.$inc, salesCredit: Number(creditAmount) };
       }
 
       await users.updateOne(
@@ -1047,54 +1046,42 @@ router.post("/getall/:userId", async (req, res) => {
 // - basic: salesCredit = 20
 // - business: salesCredit = 30
 // - premium: salesCredit = 50 per day
+// ================= UPGRADE TO SELLER PLAN =================
 router.post("/upgrade-plan", async (req, res) => {
   try {
     const { userId, plan, deductAmount } = req.body;
 
-    // Validate plan
     const validPlans = ["free", "basic", "business", "premium"];
     if (!plan || !validPlans.includes(plan.toLowerCase())) {
       return res.status(400).json({
         success: false,
-        message: `Invalid plan. Must be one of: ${validPlans.join(", ")}`
+        message: `Invalid plan. Must be: ${validPlans.join(", ")}`
       });
     }
 
     const normalizedPlan = plan.toLowerCase();
 
-    // Define sales credit for each plan
+    // ক্রেডিট লজিক: ফ্রি প্ল্যানে ১০
     const planCredits = {
-      free: 0,
+      free: 10,
       basic: 20,
       business: 30,
-      premium: 40
+      premium: 50
     };
 
     const user = await users.findOne({ _id: new ObjectId(userId) });
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found"
-      });
-    }
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
-    // Check balance if deductAmount is provided (for paid plans)
     const currentBalance = Number(user.balance) || 0;
-    let newBalance = currentBalance;
+    const cost = Number(deductAmount) || 0;
 
-    if (deductAmount && deductAmount > 0) {
-      if (currentBalance < deductAmount) {
-        return res.status(400).json({
-          success: false,
-          message: "Insufficient balance for this plan"
-        });
-      }
-      newBalance = currentBalance - deductAmount;
+    if (cost > 0 && currentBalance < cost) {
+      return res.status(400).json({ success: false, message: "Insufficient balance" });
     }
 
+    const newBalance = currentBalance - cost;
     const salesCredit = planCredits[normalizedPlan];
 
-    // Update user with new plan and sales credit
     const result = await users.updateOne(
       { _id: new ObjectId(userId) },
       {
@@ -1110,23 +1097,16 @@ router.post("/upgrade-plan", async (req, res) => {
     if (result.modifiedCount > 0) {
       res.json({
         success: true,
-        message: `Plan upgraded to ${normalizedPlan} successfully`,
+        message: `Plan upgraded to ${normalizedPlan} with ${salesCredit} credits`,
         plan: normalizedPlan,
         salesCredit: salesCredit,
         newBalance: newBalance
       });
     } else {
-      res.status(400).json({
-        success: false,
-        message: "Failed to upgrade plan"
-      });
+      res.status(400).json({ success: false, message: "No changes made" });
     }
   } catch (error) {
-    console.error("Upgrade plan error:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
@@ -1424,13 +1404,13 @@ router.put("/update-profile", async (req, res) => {
 router.post("/log-change", async (req, res) => {
   try {
     const { userEmail, fieldName, oldValue, newValue, changeType } = req.body;
-    
+
     if (!userEmail || !fieldName) {
       return res.status(400).json({ success: false, message: "Missing required fields" });
     }
 
     const changesCollection = db.collection("accountChanges");
-    
+
     const changeRecord = {
       userEmail,
       fieldName,
@@ -1458,7 +1438,7 @@ router.get("/changes/:userEmail", async (req, res) => {
   try {
     const { userEmail } = req.params;
     const changesCollection = db.collection("accountChanges");
-    
+
     const changes = await changesCollection
       .find({ userEmail })
       .sort({ timestamp: -1 })
@@ -1482,7 +1462,7 @@ router.get("/all-changes/admin/list", async (req, res) => {
     const changesCollection = db.collection("accountChanges");
     const limit = parseInt(req.query.limit) || 100;
     const skip = parseInt(req.query.skip) || 0;
-    
+
     const changes = await changesCollection
       .find({})
       .sort({ timestamp: -1 })

@@ -1,5 +1,6 @@
 const express = require("express");
 const { MongoClient, ObjectId } = require("mongodb");
+const cron = require("node-cron");
 
 const router = express.Router();
 
@@ -22,11 +23,46 @@ let db, cartCollection, purchaseCollection, userCollection, productsCollection, 
     productsCollection = db.collection("products");
     reportCollection = db.collection("reports");
     console.log("✅ MongoDB Connected");
+    
+    // ===============================
+    // Setup Auto-Confirm Cron Job
+    // ===============================
+    // Run every minute to check for expired orders
+    cron.schedule('* * * * *', async () => {
+      try {
+        const now = Date.now();
+        const pendingOrders = await purchaseCollection.find({ status: "pending" }).toArray();
+        
+        const toConfirm = [];
+        for (const order of pendingOrders) {
+          const product = await productsCollection.findOne({ _id: new ObjectId(order.productId) });
+          if (!product || product.deliveryType !== "manual" || !product.deliveryTime) continue;
+          
+          const deliveryMs = parseDeliveryTime(product.deliveryTime);
+          const expiresAt = new Date(order.purchaseDate).getTime() + deliveryMs;
+          
+          if (now >= expiresAt) toConfirm.push(order._id);
+        }
+        
+        if (toConfirm.length > 0) {
+          await purchaseCollection.updateMany(
+            { _id: { $in: toConfirm } },
+            { $set: { status: "completed", autoConfirmed: true, completedAt: new Date() } }
+          );
+          console.log(`✅ [Auto-Confirm] ${toConfirm.length} orders auto-confirmed at ${new Date().toLocaleTimeString()}`);
+        }
+      } catch (err) {
+        console.error('❌ [Auto-Confirm Job] Error:', err.message);
+      }
+    });
+    
+    console.log("✅ Auto-Confirm Cron Job Started (runs every minute)");
   } catch (err) {
     console.error("❌ MongoDB connection failed:", err);
     process.exit(1);
   }
 })();
+
 
 // =======================================================
 // 🚀 REPORT SECTION (ফিক্স করা রিপোর্ট রাউটসমূহ)
@@ -194,6 +230,8 @@ router.post("/post", async (req, res) => {
       productId: item.productId ? new ObjectId(item.productId) : new ObjectId(item._id),
       purchaseDate: new Date(),
       status: "pending",
+      deliveryType: item.deliveryType || "manual",
+      deliveryTime: item.deliveryTime || null,
     }));
 
     await purchaseCollection.insertMany(purchaseDocs);
@@ -220,6 +258,12 @@ router.post("/single-purchase", async (req, res) => {
     if (!buyer || (buyer.balance || 0) < amount) return res.status(400).json({ success: false, message: "Insufficient balance" });
 
     const productObjectId = new ObjectId(productId);
+    const product = await productsCollection.findOne({ _id: productObjectId });
+    
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
+    
     await userCollection.updateOne({ email: buyerEmail }, { $inc: { balance: -amount } });
 
     const purchaseData = {
@@ -231,6 +275,8 @@ router.post("/single-purchase", async (req, res) => {
       productId: productObjectId,
       purchaseDate: new Date(),
       status: "pending",
+      deliveryType: product.deliveryType || "manual",
+      deliveryTime: product.deliveryTime || null,
     };
 
     await purchaseCollection.insertOne(purchaseData);
@@ -260,6 +306,38 @@ router.patch("/update-status/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const { status, sellerEmail } = req.body;
+
+    // Validate status value
+    const validStatuses = ["pending", "completed", "cancelled", "refunded"];
+    if (!validStatuses.includes(status.toLowerCase())) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Invalid status. Must be: pending, completed, cancelled, or refunded" 
+      });
+    }
+
+    // Validate status transitions
+    const purchase = await purchaseCollection.findOne({ _id: new ObjectId(id) });
+    
+    if (!purchase) {
+      return res.status(404).json({ success: false, message: "Purchase not found" });
+    }
+
+    // Can't modify completed orders (except to refund)
+    if (purchase.status === "completed" && status.toLowerCase() !== "refunded") {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Cannot modify completed orders. Only refunds are allowed." 
+      });
+    }
+
+    // Can't modify cancelled or refunded orders
+    if ((purchase.status === "cancelled" || purchase.status === "refunded") && status.toLowerCase() !== purchase.status) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `Cannot modify ${purchase.status} orders` 
+      });
+    }
 
     if (status !== "completed") {
       await purchaseCollection.updateOne({ _id: new ObjectId(id) }, { $set: { status } });
@@ -301,22 +379,68 @@ router.patch("/update-status/:id", async (req, res) => {
   }
 });
 
+// Helper function to parse delivery time strings
+function parseDeliveryTime(timeStr) {
+  if (!timeStr) return 14400000; // default 4h
+  const match = timeStr.match(/(\d+)\s*(mins?|minutes?|h|hours?|d|days?)/i);
+  if (match) {
+    const num = parseInt(match[1]);
+    const unit = match[2].toLowerCase();
+    if (unit.startsWith('min')) return num * 60000;
+    if (unit.startsWith('h')) return num * 3600000;
+    if (unit.startsWith('d')) return num * 86400000;
+  }
+  return 14400000; // default 4h
+}
+
 router.get("/auto-confirm-check", async (req, res) => {
   try {
-    const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000);
-    const pendingOrders = await purchaseCollection.find({
-      status: "pending",
-      purchaseDate: { $lt: fourHoursAgo }
-    }).toArray();
+    const now = Date.now();
+    
+    // Get all pending purchases
+    const pendingOrders = await purchaseCollection
+      .find({ status: "pending" })
+      .toArray();
 
-    if (pendingOrders.length > 0) {
-      const ids = pendingOrders.map(order => order._id);
+    const toConfirm = [];
+
+    for (const order of pendingOrders) {
+      // Fetch product to get deliveryTime
+      const product = await productsCollection.findOne({
+        _id: new ObjectId(order.productId)
+      });
+
+      if (!product) continue;
+
+      // Only auto-confirm if manual delivery with deliveryTime
+      if (product.deliveryType !== "manual" || !product.deliveryTime) {
+        continue;
+      }
+
+      // Parse deliveryTime
+      const deliveryMs = parseDeliveryTime(product.deliveryTime);
+      const purchaseTime = new Date(order.purchaseDate).getTime();
+      const expiresAt = purchaseTime + deliveryMs;
+
+      // Check if expired
+      if (now >= expiresAt) {
+        toConfirm.push(order._id);
+      }
+    }
+
+    // Bulk update to completed
+    if (toConfirm.length > 0) {
       await purchaseCollection.updateMany(
-        { _id: { $in: ids } },
-        { $set: { status: "confirmed", updatedAt: new Date() } }
+        { _id: { $in: toConfirm } },
+        { $set: { status: "completed", autoConfirmed: true, completedAt: new Date() } }
       );
     }
-    res.json({ success: true, message: `${pendingOrders.length} orders confirmed.` });
+
+    res.json({ 
+      success: true, 
+      confirmedCount: toConfirm.length,
+      message: `${toConfirm.length} orders auto-confirmed based on delivery time`
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
