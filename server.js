@@ -21,7 +21,7 @@ app.use(
 app.use(cors());
 
 // --- ইমেজ শো করার জন্য নিচের এই লাইনটি যোগ করা হয়েছে ---
-app.use("/uploads", express.static(path.join(__dirname, "uploads"))); 
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // ---------------------------------------
 // DATABASE (Vercel-safe Singleton)
@@ -218,9 +218,25 @@ app.get("/icon-data", async (req, res) => {
 //     console.log(`Server running on port ${PORT}`);
 //   });
 // }
+const http = require("http");
+const { Server } = require("socket.io");
+const socketManager = require("./socketManager");
+
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*", // Allow all origins for now, restrict in production
+    methods: ["GET", "POST"]
+  }
+});
+
+// Pass io to logical modules
+app.set("io", io);
+socketManager(io);
+
 const PORT = process.env.PORT || 3200;
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
 
@@ -485,7 +501,7 @@ cron.schedule(
 //     }
 //   },
 //   {
-//     timezone: "Asia/Dhaka", 
+//     timezone: "Asia/Dhaka",
 //   }
 // );
 

@@ -585,12 +585,17 @@ async function run() {
 
         const result = await chatCollection.insertOne(newMessage);
 
+        const io = req.app.get("io");
+
         // Update sender's presence
         await presenceCollection.updateOne(
           { userId: senderId },
           { $set: { lastSeen: new Date(), status: "online" } },
           { upsert: true }
         );
+        if (io) {
+          io.emit("user_status_update", { userId: senderId, status: "online", lastSeen: new Date() });
+        }
 
         // Create notification for receiver
         await notificationCollection.insertOne({
@@ -602,6 +607,36 @@ async function run() {
           read: false,
           createdAt: new Date(),
         });
+
+        // Real-time emit to receiver (and sender for sync)
+        if (io) {
+          // Emit message to room (orderId) or personal room (receiverId)
+          // Ideally chat is persisted in 'orderId' room if both are joined, 
+          // OR we send to specific user rooms. 
+          // Let's send to both sender and receiver personal rooms or the order room.
+          // Assuming frontend joins 'orderId' room or 'receiverId' room.
+          // Let's emit to the Order room context if they are chatting there.
+          io.to(orderId).emit("receive_message", result.insertedId ? { ...newMessage, _id: result.insertedId } : newMessage);
+
+          // Also emit notification update to receiver
+          io.to(receiverId).emit("notification_update", {
+            type: 'chat',
+            orderId,
+            count: 1 // Increment logic should be handled by client or we send total unread
+          });
+
+          // Let's actually calculate total unread for this order for the receiver to be precise
+          const unreadCount = await notificationCollection.countDocuments({
+            userEmail: receiverId.toString(),
+            orderId: orderId.toString(),
+            read: false,
+            type: 'chat'
+          });
+          io.to(receiverId).emit("unread_count_update", {
+            orderId,
+            count: unreadCount
+          });
+        }
 
         res.status(201).json({
           success: true,
@@ -701,6 +736,14 @@ async function run() {
           { userEmail: userId, orderId, read: false },
           { $set: { read: true } }
         );
+
+        const io = req.app.get("io");
+        if (io) {
+          io.to(userId).emit("unread_count_update", {
+            orderId,
+            count: 0
+          });
+        }
 
         res.json({ success: true });
       } catch (error) {
