@@ -23,6 +23,36 @@ const userCollection = db.collection("userCollection");
     }
 })();
 
+// Helper: Check and Reset Credits (24h Logic)
+async function checkAndResetCredits(user) {
+    if (!user.lastCreditResetAt || !user.planCredit) return user;
+
+    const lastReset = new Date(user.lastCreditResetAt);
+    const now = new Date();
+    const diffMs = now - lastReset;
+    const diffHours = diffMs / (1000 * 60 * 60);
+
+    if (diffHours >= 24) {
+        // RESET LOGIC: Strict reset to plan limit (no stacking)
+        const newCredits = user.planCredit;
+
+        await userCollection.updateOne(
+            { _id: user._id },
+            {
+                $set: {
+                    salesCredit: newCredits,
+                    lastCreditResetAt: now
+                }
+            }
+        );
+
+        // Return updated user object
+        return { ...user, salesCredit: newCredits, lastCreditResetAt: now };
+    }
+
+    return user;
+}
+
 router.post("/sell", async (req, res) => {
     try {
         const { products } = req.body;
@@ -63,15 +93,15 @@ router.post("/sell", async (req, res) => {
             // 🚚 Delivery Validation
             // 1. deliveryType must be present
             if (!product.deliveryType) {
-                return res.status(400).json({ 
-                    message: `deliveryType is required (manual or automated) for product: ${product.name || "unnamed"}` 
+                return res.status(400).json({
+                    message: `deliveryType is required (manual or automated) for product: ${product.name || "unnamed"}`
                 });
             }
 
             // 2. If manual, deliveryTime is required
             if (product.deliveryType === "manual" && !product.deliveryTime?.trim()) {
-                return res.status(400).json({ 
-                    message: `deliveryTime is required for manual delivery - product: ${product.name || "unnamed"}` 
+                return res.status(400).json({
+                    message: `deliveryTime is required for manual delivery - product: ${product.name || "unnamed"}`
                 });
             }
 
@@ -81,13 +111,41 @@ router.post("/sell", async (req, res) => {
                     message: `deliveryType must be "manual" or "automated" - got: ${product.deliveryType} for product: ${product.name || "unnamed"}`
                 });
             }
+
+            // 2. If manual, deliveryTime is required and must match strict format
+            if (product.deliveryType === "manual") {
+                if (!product.deliveryTime || !product.deliveryTime.trim()) {
+                    return res.status(400).json({
+                        message: `deliveryTime is required for manual delivery - product: ${product.name || "unnamed"}`
+                    });
+                }
+
+                // STRICT REGEX VALIDATION
+                const strictRegex = /^(?:[1-9]\d{0,5}|1\d{6}|2[0-1]\d{5}|22[0-2]\d{4}|223[0-3]\d{3}|2234[0-1]\d{2}|22342[0-3]\d|223424)\smins$/;
+                if (!strictRegex.test(product.deliveryTime)) {
+                    return res.status(400).json({
+                        message: `Invalid delivery time format for product: ${product.name || "unnamed"}. Must be "<number> mins" (max 223,424 mins). Example: "30 mins"`
+                    });
+                }
+
+                // Numeric Check
+                const minutes = parseInt(product.deliveryTime.split(' ')[0], 10);
+                if (minutes > 223424) {
+                    return res.status(400).json({
+                        message: `Delivery time exceeds limit of 223,424 mins.`
+                    });
+                }
+            }
         }
 
         // Find user
-        const user = await userCollection.findOne({ email: userEmail });
+        let user = await userCollection.findOne({ email: userEmail });
         if (!user) {
             return res.status(404).json({ message: "User not found" });
         }
+
+        // 🔄 Recurring Credit Check
+        user = await checkAndResetCredits(user);
 
         // Check if user has enough credits (1 credit per product)
         const creditsNeeded = products.length;
@@ -146,14 +204,16 @@ router.get("/credit", async (req, res) => {
             return res.status(400).json({ message: "Email query parameter is required" });
         }
 
-        const user = await userCollection.findOne(
-            { email: email },
-            { projection: { salesCredit: 1, _id: 0 } }
+        let user = await userCollection.findOne(
+            { email: email }
         );
 
         if (!user) {
             return res.status(404).json({ message: "User not found" });
         }
+
+        // 🔄 Recurring Credit Check
+        user = await checkAndResetCredits(user);
 
         res.json({ salesCredit: user.salesCredit || 0 });
     } catch (error) {
