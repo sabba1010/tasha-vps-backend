@@ -636,9 +636,75 @@ async function run() {
           .sort({ timestamp: 1 })
           .toArray();
 
+        // Mark messages as read when history is fetched by the receiver
+        // determining who is the viewer (receiver) is tricky here without auth token, 
+        // strictly speaking history can be fetched by either party. 
+        // For now, we rely on the explicit POST /mark-read or the frontend calling it.
+
         res.status(200).json(chats);
       } catch (error) {
         console.error("History Error:", error);
+        res.status(500).json({ error: "Internal Server Error" });
+      }
+    });
+
+    /* ===============================
+       GET: Unread Counts
+    ================================ */
+    router.get("/unread/counts/:userId", async (req, res) => {
+      try {
+        const { userId } = req.params;
+        if (!userId) return res.status(400).json({ error: "userId required" });
+
+        // Aggregate unread notifications grouped by orderId
+        const pipeline = [
+          {
+            $match: {
+              userEmail: userId,
+              read: false,
+              type: 'chat'
+            }
+          },
+          {
+            $group: {
+              _id: "$orderId",
+              count: { $sum: 1 }
+            }
+          }
+        ];
+
+        const results = await notificationCollection.aggregate(pipeline).toArray();
+
+        // Transform to map { orderId: count }
+        const counts = {};
+        results.forEach(item => {
+          if (item._id) counts[item._id] = item.count;
+        });
+
+        res.json(counts);
+      } catch (error) {
+        console.error("Unread counts error:", error);
+        res.status(500).json({ error: "Internal Server Error" });
+      }
+    });
+
+    /* ===============================
+       POST: Mark Read
+    ================================ */
+    router.post("/mark-read", async (req, res) => {
+      try {
+        const { userId, orderId } = req.body;
+        if (!userId || !orderId) return res.status(400).json({ error: "userId and orderId required" });
+
+        // Update all notifications for this user & order to read: true
+        await notificationCollection.updateMany(
+          { userEmail: userId, orderId, read: false },
+          { $set: { read: true } }
+        );
+
+        res.json({ success: true });
+      } catch (error) {
+        console.error("Mark read error:", error);
         res.status(500).json({ error: "Internal Server Error" });
       }
     });
