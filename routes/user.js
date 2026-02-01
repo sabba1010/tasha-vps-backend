@@ -1342,7 +1342,7 @@ router.put("/update-password", async (req, res) => {
 // ================= UPDATE PROFILE =================
 router.put("/update-profile", async (req, res) => {
   try {
-    const { email, name, phone, country, state, city, address, dob } = req.body;
+    const { email, name, phone, country, state, city, address, dob, profilePicture, isTwoFactorEnabled } = req.body;
 
     if (!email) {
       return res.status(400).json({
@@ -1370,6 +1370,8 @@ router.put("/update-profile", async (req, res) => {
     if (city !== undefined) updateData.city = city;
     if (address !== undefined) updateData.address = address;
     if (dob !== undefined) updateData.dob = dob;
+    if (profilePicture !== undefined) updateData.profilePicture = profilePicture;
+    if (isTwoFactorEnabled !== undefined) updateData.isTwoFactorEnabled = isTwoFactorEnabled;
 
     // Update profile
     const result = await users.updateOne(
