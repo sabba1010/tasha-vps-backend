@@ -685,19 +685,19 @@ async function run() {
 
     /* ===============================
        GET: Unread Counts
+       Counts unread messages where userId is the receiverId
     ================================ */
     router.get("/unread/counts/:userId", async (req, res) => {
       try {
         const { userId } = req.params;
         if (!userId) return res.status(400).json({ error: "userId required" });
 
-        // Aggregate unread notifications grouped by orderId
+        // Count messages where user is receiver and message is unread
         const pipeline = [
           {
             $match: {
-              userEmail: userId,
-              read: false,
-              type: 'chat'
+              receiverId: userId,
+              read: { $ne: true } // Messages not marked as read
             }
           },
           {
@@ -708,7 +708,7 @@ async function run() {
           }
         ];
 
-        const results = await notificationCollection.aggregate(pipeline).toArray();
+        const results = await chatCollection.aggregate(pipeline).toArray();
 
         // Transform to map { orderId: count }
         const counts = {};
@@ -723,15 +723,23 @@ async function run() {
       }
     });
 
+
     /* ===============================
        POST: Mark Read
+       Marks messages as read in both chatCollection and notificationCollection
     ================================ */
     router.post("/mark-read", async (req, res) => {
       try {
         const { userId, orderId } = req.body;
         if (!userId || !orderId) return res.status(400).json({ error: "userId and orderId required" });
 
-        // Update all notifications for this user & order to read: true
+        // Mark messages as read in chatCollection (where user is receiver)
+        await chatCollection.updateMany(
+          { receiverId: userId, orderId, read: { $ne: true } },
+          { $set: { read: true } }
+        );
+
+        // Also update notifications for backwards compatibility
         await notificationCollection.updateMany(
           { userEmail: userId, orderId, read: false },
           { $set: { read: true } }
@@ -751,6 +759,7 @@ async function run() {
         res.status(500).json({ error: "Internal Server Error" });
       }
     });
+
 
     /* ===============================
        Presence APIs
