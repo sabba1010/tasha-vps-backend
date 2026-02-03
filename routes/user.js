@@ -958,7 +958,7 @@ router.post("/become-seller", async (req, res) => {
 
     const result = await users.updateOne(
       { email },
-      { $set: { balance: newBalance, role: "seller" } }
+      { $set: { balance: newBalance, role: "seller", subscribedPlan: "free", salesCredit: 10 } }
     );
 
     if (result.modifiedCount > 0) {
@@ -1066,7 +1066,7 @@ router.post("/upgrade-plan", async (req, res) => {
       free: 10,
       basic: 20,
       business: 30,
-      premium: 50
+      premium: 40
     };
 
     const user = await users.findOne({ _id: new ObjectId(userId) });

@@ -250,11 +250,31 @@ cron.schedule(
   "0 0 * * *", // every day at 12:00 AM
   async () => {
     try {
-      const result = await userCollection.updateMany(
-        {}, // all users
+      // 1. Free / Default -> 10 Credits
+      await userCollection.updateMany(
+        { $or: [{ subscribedPlan: "free" }, { subscribedPlan: "default" }, { subscribedPlan: { $exists: false } }, { subscribedPlan: null }] },
         { $set: { salesCredit: 10 } }
       );
-      console.log("✅ Daily sales credit reset (Nigeria time)");
+
+      // 2. Basic -> 20 Credits
+      await userCollection.updateMany(
+        { subscribedPlan: "basic" },
+        { $set: { salesCredit: 20 } }
+      );
+
+      // 3. Business -> 30 Credits
+      await userCollection.updateMany(
+        { subscribedPlan: "business" },
+        { $set: { salesCredit: 30 } }
+      );
+
+      // 4. Premium -> 40 Credits
+      await userCollection.updateMany(
+        { subscribedPlan: "premium" },
+        { $set: { salesCredit: 40 } }
+      );
+
+      console.log("✅ Daily sales credit reset based on plans (Nigeria time)");
     } catch (error) {
       console.error("❌ Error in daily credit reset:", error);
     }

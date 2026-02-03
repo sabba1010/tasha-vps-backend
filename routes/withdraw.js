@@ -513,6 +513,7 @@
 
 const express = require("express");
 const { MongoClient, ObjectId } = require("mongodb");
+const { processKorapayPayout, processFlutterwavePayout } = require("../utils/payout");
 
 const router = express.Router();
 
@@ -613,28 +614,28 @@ router.post("/post", async (req, res) => {
           throw new Error("Failed to update user balance");
         }
 
-        // 2. Create withdrawal request and compute fee/net using settings
+        // 2. Create withdrawal record (Instant & No Fees)
         const settingsCol = db.collection("settings");
         const settingsDoc = await settingsCol.findOne({ _id: "config" });
-        const adminFeeRate = (settingsDoc && settingsDoc.sellerWithdrawalRate) ? Number(settingsDoc.sellerWithdrawalRate) : 0;
+        // User requested NO FEES, but we still fetch the rate
         const withdrawRate = (settingsDoc && settingsDoc.withdrawRate) ? Number(settingsDoc.withdrawRate) : 1400;
 
-        const feeAmount = Number(((withdrawAmount * adminFeeRate) / 100).toFixed(2));
-        const netAmountUSD = Number((withdrawAmount - feeAmount).toFixed(2));
+        const feeAmount = 0; // Forced to 0 as requested
+        const netAmountUSD = withdrawAmount;
         const amountNGN = Math.round(netAmountUSD * withdrawRate);
 
-        const insertResult = await withdrawalCollection.insertOne({
+        const withdrawalDoc = {
           userId: userObjectId,
           userEmail: user.email,
           paymentMethod,
-          amount: withdrawAmount.toString(), // requested amount in USD
+          amount: withdrawAmount.toString(),
           amountUSD: withdrawAmount,
           amountNGN: amountNGN,
           appliedRate: withdrawRate,
-          fee: feeAmount.toString(),
-          netAmount: netAmountUSD.toString(), // net in USD
+          fee: "0",
+          netAmount: withdrawAmount.toString(),
           netAmountNGN: amountNGN,
-          feeRate: adminFeeRate,
+          feeRate: 0,
           currency,
           accountNumber,
           bankCode,
@@ -643,32 +644,90 @@ router.post("/post", async (req, res) => {
           phoneNumber: phoneNumber || null,
           email: email || user.email,
           note: note || "",
-          status: "pending",
+          status: "processing", // Initial state
           adminNote: "",
           createdAt: new Date(),
           updatedAt: new Date()
-        }, { session });
+        };
 
-        // Success response
-        res.status(201).json({
-          success: true,
-          message: "Withdrawal request submitted successfully. Amount deducted from balance.",
-          withdrawalId: insertResult.insertedId.toString(),
-          deductedAmount: withdrawAmount,
-          newBalance: currentBalance - withdrawAmount
-        });
+        const insertResult = await withdrawalCollection.insertOne(withdrawalDoc, { session });
+        const withdrawalId = insertResult.insertedId;
+
+        // 3. ATTEMPT INSTANT PAYOUT (Bypassing Admin Approval)
+        let payoutResult = { success: false, error: "Auto-payout skipped" };
+        const payoutRecord = { ...withdrawalDoc, _id: withdrawalId };
+
+        if (paymentMethod === "korapay") {
+          payoutResult = await processKorapayPayout(payoutRecord);
+        } else if (paymentMethod === "flutterwave" || paymentMethod === "flw") {
+          payoutResult = await processFlutterwavePayout(payoutRecord);
+        } else {
+          // Manual fallback (if they choose something non-auto)
+          payoutResult = { success: true, manual: true };
+        }
+
+        if (payoutResult.success) {
+          await withdrawalCollection.updateOne(
+            { _id: withdrawalId },
+            {
+              $set: {
+                status: payoutResult.manual ? "approved" : "completed",
+                payoutReference: payoutResult.reference || null,
+                payoutData: payoutResult.data || null,
+                autoPayout: !payoutResult.manual,
+                updatedAt: new Date()
+              }
+            },
+            { session }
+          );
+
+          res.status(201).json({
+            success: true,
+            message: payoutResult.manual
+              ? "Withdrawal approved. Manual processing required."
+              : "Withdrawal completed successfully and funds sent.",
+            withdrawalId: withdrawalId.toString(),
+            status: payoutResult.manual ? "approved" : "completed"
+          });
+        } else {
+          // PAYOUT FAILED -> REFUND USER IMMEDIATELY
+          await userCollection.updateOne(
+            { _id: userObjectId },
+            { $inc: { balance: withdrawAmount } },
+            { session }
+          );
+
+          await withdrawalCollection.updateOne(
+            { _id: withdrawalId },
+            {
+              $set: {
+                status: "failed",
+                adminNote: payoutResult.error,
+                updatedAt: new Date()
+              }
+            },
+            { session }
+          );
+
+          res.status(500).json({
+            success: false,
+            message: "Instant payout failed. Your balance has been refunded.",
+            error: payoutResult.error
+          });
+        }
       });
     } finally {
       await session.endSession();
     }
-
   } catch (error) {
-    console.error("Withdrawal submission error:", error);
-    res.status(500).json({ message: "Server error. Please try again later." });
+    console.error("Instant Withdrawal error:", error);
+    if (!res.headersSent) {
+      res.status(500).json({ message: "Server error during withdrawal processing." });
+    }
   }
 });
 
-// PUT: Approve a withdrawal by ID
+// PUT: Approve a withdrawal by ID and trigger Automatic Payout
 // Endpoint: PUT /withdraw/approve/:id
 router.put("/approve/:id", async (req, res) => {
   try {
@@ -683,28 +742,60 @@ router.put("/approve/:id", async (req, res) => {
       return res.status(400).send({ message: "Invalid withdrawal ID format." });
     }
 
+    const withdrawal = await cartCollection.findOne({ _id: new ObjectId(id) });
+    if (!withdrawal) {
+      return res.status(404).send({ message: "Withdrawal request not found." });
+    }
+
+    if (withdrawal.status !== "pending") {
+      return res.status(400).send({ message: `Withdrawal is already ${withdrawal.status}.` });
+    }
+
+    // TRIGGER AUTOMATIC PAYOUT
+    let payoutResult = { success: false, error: "Unsupported payment method for auto-payout" };
+
+    if (withdrawal.paymentMethod === "korapay") {
+      payoutResult = await processKorapayPayout(withdrawal);
+    } else if (withdrawal.paymentMethod === "flutterwave" || withdrawal.paymentMethod === "flw") {
+      payoutResult = await processFlutterwavePayout(withdrawal);
+    } else {
+      // If it's manual (localbank), we just mark as approved
+      payoutResult = { success: true, manual: true };
+    }
+
+    if (!payoutResult.success) {
+      return res.status(500).send({
+        success: false,
+        message: "Payout failed",
+        error: payoutResult.error
+      });
+    }
+
     const result = await cartCollection.updateOne(
       { _id: new ObjectId(id) },
       {
         $set: {
-          status: "approved",
+          status: payoutResult.manual ? "approved" : "completed",
           approvedAt: new Date(),
+          payoutReference: payoutResult.reference || null,
+          payoutData: payoutResult.data || null,
+          autoPayout: !payoutResult.manual
         },
       }
     );
 
-    if (result.matchedCount === 0) {
-      return res.status(404).send({ message: "Withdrawal request not found." });
-    }
-
     res.status(200).send({
       success: true,
       modifiedCount: result.modifiedCount,
-      message: "Withdrawal approved successfully.",
+      message: payoutResult.manual
+        ? "Withdrawal approved (Manual transfer required)."
+        : "Automatic payout successful. Withdrawal completed.",
+      reference: payoutResult.reference
     });
+
   } catch (error) {
-    console.error("Update Error:", error);
-    res.status(500).send({ message: "Internal Server Error" });
+    console.error("Approval/Payout Error:", error);
+    res.status(500).send({ message: "Internal Server Error during payout process" });
   }
 });
 
