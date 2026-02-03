@@ -82,10 +82,19 @@ async function processFlutterwavePayout(withdrawal) {
             reference,
         };
     } catch (err) {
-        console.error("Flutterwave Payout Error:", err.response?.data || err.message);
+        const errorData = err.response?.data || err.message;
+        console.error("Flutterwave Payout Error:", errorData);
+
+        // Detailed logging to file
+        const fs = require('fs');
+        try {
+            const logMsg = `[${new Date().toISOString()}] Flutterwave Error Detail: ${JSON.stringify(errorData, null, 2)}\nPayload: ${JSON.stringify(withdrawal, null, 2)}\n`;
+            fs.appendFileSync('debug_payout.log', logMsg);
+        } catch (e) { }
+
         return {
             success: false,
-            error: err.response?.data?.message || err.message,
+            error: errorData.message || err.message,
         };
     }
 }

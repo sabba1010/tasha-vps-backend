@@ -554,11 +554,13 @@ let db;
 // Endpoint: POST /withdraw/post
 router.post("/post", async (req, res) => {
   try {
+    console.log("Withdraw payload:", req.body);
+
     const {
       userId,
-      paymentMethod,     // "kora" | "flutterwave" | "localbank"
+      paymentMethod,
       amount,
-      currency = "NGN",
+      currency = "USD",
       accountNumber,
       bankCode,
       fullName,
@@ -568,34 +570,38 @@ router.post("/post", async (req, res) => {
       bankName
     } = req.body;
 
-    // Validation
-    if (!userId || !amount || !paymentMethod || !accountNumber || !bankCode || !fullName) {
-      return res.status(400).json({
-        message: "Missing required fields: userId, amount, paymentMethod, accountNumber, bankCode, fullName"
+    // Strict Validation
+    if (!userId || !paymentMethod || !accountNumber || !bankCode || !fullName) {
+      return res.status(422).json({
+        success: false,
+        message: "Missing required fields: userId, paymentMethod, accountNumber, bankCode, fullName"
+      });
+    }
+
+    if (!amount || Number(amount) <= 0) {
+      return res.status(422).json({
+        success: false,
+        message: "Invalid withdrawal amount"
       });
     }
 
     const withdrawAmount = Number(amount);
-    if (isNaN(withdrawAmount) || withdrawAmount <= 0) {
-      return res.status(400).json({ message: "Amount must be a positive number" });
-    }
 
     // Find user
     const userObjectId = new ObjectId(userId);
     const user = await userCollection.findOne({ _id: userObjectId });
 
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(422).json({ success: false, message: "User not found" });
     }
 
     const currentBalance = Number(user.balance || 0);
 
     // Check sufficient balance
     if (currentBalance < withdrawAmount) {
-      return res.status(400).json({
-        message: "Insufficient balance",
-        available: currentBalance,
-        requested: withdrawAmount
+      return res.status(422).json({
+        success: false,
+        message: `Insufficient balance. Available: $${currentBalance}, Requested: $${withdrawAmount}`
       });
     }
 
@@ -657,7 +663,7 @@ router.post("/post", async (req, res) => {
         let payoutResult = { success: false, error: "Auto-payout skipped" };
         const payoutRecord = { ...withdrawalDoc, _id: withdrawalId };
 
-        if (paymentMethod === "korapay") {
+        if (paymentMethod === "korapay" || paymentMethod === "kora") {
           payoutResult = await processKorapayPayout(payoutRecord);
         } else if (paymentMethod === "flutterwave" || paymentMethod === "flw") {
           payoutResult = await processFlutterwavePayout(payoutRecord);
@@ -709,7 +715,12 @@ router.post("/post", async (req, res) => {
             { session }
           );
 
-          res.status(500).json({
+          // LOG ERROR TO FILE
+          const fs = require('fs');
+          const logMsg = `[${new Date().toISOString()}] Payout Failed: ${JSON.stringify(payoutResult.error)}\nPayload: ${JSON.stringify(withdrawalDoc)}\n`;
+          try { fs.appendFileSync('debug_payout.log', logMsg); } catch (e) { }
+
+          res.status(422).json({
             success: false,
             message: "Instant payout failed. Your balance has been refunded.",
             error: payoutResult.error
@@ -721,8 +732,20 @@ router.post("/post", async (req, res) => {
     }
   } catch (error) {
     console.error("Instant Withdrawal error:", error);
+
+    // Safely attempt to log to file
+    const fs = require('fs');
+    try {
+      const logMsg = `[${new Date().toISOString()}] CRITICAL ERROR: ${error.message}\nStack: ${error.stack}\n`;
+      fs.appendFileSync('debug_payout.log', logMsg);
+    } catch (e) { }
+
     if (!res.headersSent) {
-      res.status(500).json({ message: "Server error during withdrawal processing." });
+      res.status(500).json({
+        success: false,
+        message: "Server error during withdrawal processing.",
+        error: error.message
+      });
     }
   }
 });
