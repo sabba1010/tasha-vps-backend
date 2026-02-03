@@ -6,6 +6,7 @@ const client = new MongoClient(process.env.MONGO_URI);
 
 let chatCollection;
 let userCollection;
+let notifiCollection;
 
 async function initDB() {
   if (chatCollection) return;
@@ -16,6 +17,7 @@ async function initDB() {
   // আপনার ইমেজে থাকা কালেকশন নাম অনুযায়ী
   chatCollection = db.collection("adminChatCollection");
   userCollection = db.collection("userCollection");
+  notifiCollection = db.collection("notifiCollection");
 }
 
 initDB();
@@ -38,12 +40,40 @@ router.post("/send", async (req, res) => {
 
     const doc = {
       senderId: senderEmail,    // ইমেজের স্ট্রাকচার অনুযায়ী
-      receiverId: finalReceiver, 
+      receiverId: finalReceiver,
       message: message,
       timestamp: new Date(),    // ইমেজে ফিল্ডের নাম timestamp
+      read: false,              // নতুন মেসেজ সবসময় আনরিড থাকবে
     };
 
     await chatCollection.insertOne(doc);
+
+    // If admin is sending, notify the user
+    if (senderEmail === "admin@gmail.com") {
+      try {
+        const notif = {
+          userEmail: finalReceiver,
+          title: "New message from admin",
+          message: "You have a new support message from administration.",
+          type: "admin_chat",
+          createdAt: new Date(),
+          read: false
+        };
+        const result = await notifiCollection.insertOne(notif);
+
+        const io = req.app.get("io");
+        if (io) {
+          // Emit to user's room
+          io.to(finalReceiver).emit("new_notification", {
+            ...notif,
+            _id: result.insertedId
+          });
+        }
+      } catch (err) {
+        console.error("Admin notification error:", err);
+      }
+    }
+
     res.json({ success: true, data: doc });
   } catch (err) {
     console.error("Chat send error:", err);
@@ -82,6 +112,65 @@ router.get("/history/:userEmail", async (req, res) => {
     res.json(formattedChats);
   } catch (err) {
     console.error("Chat history error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+/* =========================
+   GET UNREAD COUNTS (For Admin)
+========================= */
+router.get("/unread-counts", async (req, res) => {
+  try {
+    await initDB();
+    // এডমিন রিসিভার হিসেবে আছে এমন সব আনরিড মেসেজ গ্রুপ করা হবে
+    const pipeline = [
+      {
+        $match: {
+          receiverId: "admin@gmail.com",
+          read: false
+        }
+      },
+      {
+        $group: {
+          _id: "$senderId",
+          count: { $sum: 1 }
+        }
+      }
+    ];
+
+    const results = await chatCollection.aggregate(pipeline).toArray();
+
+    // Transform to map { userEmail: count }
+    const counts = {};
+    results.forEach(item => {
+      counts[item._id] = item.count;
+    });
+
+    res.json(counts);
+  } catch (err) {
+    console.error("Unread counts error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+/* =========================
+   MARK READ (By Admin)
+========================= */
+router.post("/mark-read-admin", async (req, res) => {
+  try {
+    const { userEmail } = req.body;
+    if (!userEmail) return res.status(400).json({ error: "userEmail required" });
+
+    await initDB();
+    // এই ইউজারের পাঠানো সব মেসেজ যা এডমিন রিসিভ করেছে সেগুলো রিড মার্ক হবে
+    await chatCollection.updateMany(
+      { senderId: userEmail, receiverId: "admin@gmail.com", read: false },
+      { $set: { read: true } }
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Mark read error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });

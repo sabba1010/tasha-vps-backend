@@ -169,11 +169,13 @@ app.patch("/payments/:id", async (req, res) => {
       });
 
       if (user) {
+        // Use amountUSD if available, otherwise fallback to amount
+        const creditAmount = payment.amountUSD || payment.amount;
         await userCollection.updateOne(
           { _id: user._id },
           {
             $inc: {
-              balance: Number(payment.amount),
+              balance: Number(creditAmount),
             },
           }
         );

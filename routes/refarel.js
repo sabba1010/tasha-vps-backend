@@ -24,14 +24,14 @@ const usersCollection = db.collection("userCollection");
 router.get("/stats", async (req, res) => {
   try {
     const { email } = req.query;
-    
+
     if (!email) {
       return res.status(400).json({ success: false, message: "Email is required" });
     }
 
     // Find the user with their referral code
     const user = await usersCollection.findOne({ email });
-    
+
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
@@ -53,7 +53,7 @@ router.get("/stats", async (req, res) => {
       success: true,
       data: {
         referralCode,
-        referralLink: `${process.env.FRONTEND_URL || 'https://dashing-zuccutto-cb094a.netlify.app'}/register?ref=${referralCode}`,
+        referralLink: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/register?ref=${referralCode}`,
         referredBuyers,
         referredSellers,
         totalReferrals: referredBuyers + referredSellers,
@@ -106,7 +106,7 @@ router.patch("/admin/update-referral-status", async (req, res) => {
           { $inc: { balance: 5 } }
         );
       }
-    } 
+    }
     else if (status === "rejected") {
       // রিজেক্ট হলে কোনো ব্যালেন্স আপডেট হবে না (বোনাস কেউ পাবে না)
       // এটি অটোমেটিক অ্যাডমিনের সেভিংস/গেইন হিসেবে সিস্টেমে থেকে যাবে
@@ -128,11 +128,11 @@ router.patch("/admin/update-referral-status", async (req, res) => {
       { $set: updateData }
     );
 
-    res.json({ 
-      success: true, 
-      message: status === "rejected" 
-        ? "Referral rejected. No bonus was issued." 
-        : "Referral approved. Bonus sent to referrer." 
+    res.json({
+      success: true,
+      message: status === "rejected"
+        ? "Referral rejected. No bonus was issued."
+        : "Referral approved. Bonus sent to referrer."
     });
 
   } catch (err) {
@@ -146,19 +146,19 @@ router.patch("/admin/update-referral-status", async (req, res) => {
 router.get("/link", async (req, res) => {
   try {
     const { email } = req.query;
-    
+
     if (!email) {
       return res.status(400).json({ success: false, message: "Email is required" });
     }
 
     const user = await usersCollection.findOne({ email });
-    
+
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
     const referralCode = user.referralCode;
-    const referralLink = `${process.env.FRONTEND_URL || 'https://dashing-zuccutto-cb094a.netlify.app'}/register?ref=${referralCode}`;
+    const referralLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/register?ref=${referralCode}`;
 
     res.json({
       success: true,
@@ -179,9 +179,9 @@ router.get("/link", async (req, res) => {
 router.get("/user/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
-    
+
     const user = await usersCollection.findOne({ _id: new ObjectId(userId) });
-    
+
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
@@ -200,7 +200,7 @@ router.get("/user/:userId", async (req, res) => {
         userId,
         email: user.email,
         referralCode,
-        referralLink: `${process.env.FRONTEND_URL || 'https://dashing-zuccutto-cb094a.netlify.app'}/register?ref=${referralCode}`,
+        referralLink: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/register?ref=${referralCode}`,
         referredBuyers,
         referredSellers,
         totalReferrals: referredBuyers + referredSellers,
@@ -218,13 +218,13 @@ router.get("/user/:userId", async (req, res) => {
 router.get("/history", async (req, res) => {
   try {
     const { email } = req.query;
-    
+
     if (!email) {
       return res.status(400).json({ success: false, message: "Email is required" });
     }
 
     const user = await usersCollection.findOne({ email });
-    
+
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }

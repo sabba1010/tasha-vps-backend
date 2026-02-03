@@ -90,6 +90,29 @@ router.post("/report/create", async (req, res) => {
     };
 
     const result = await reportCollection.insertOne(newReport);
+
+    // 🔔 Notify Seller
+    try {
+      const io = req.app.get("io");
+      const notificationData = {
+        userEmail: sellerEmail,
+        title: "Order Reported",
+        message: `⚠️ Order #${orderId.slice(-6).toUpperCase()} has been reported for "${reason}".`,
+        type: "report",
+        orderId: orderId,
+        createdAt: new Date(),
+        read: false
+      };
+
+      await db.collection("notifiCollection").insertOne(notificationData);
+
+      if (io) {
+        io.to(sellerEmail).emit("new_notification", notificationData);
+      }
+    } catch (notifErr) {
+      console.error("Failed to send notification for report:", notifErr);
+    }
+
     res.status(201).json({ success: true, message: "Report submitted successfully", reportId: result.insertedId });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -337,6 +360,17 @@ router.patch("/update-status/:id", async (req, res) => {
         success: false, 
         message: `Cannot modify ${purchase.status} orders` 
       });
+    }
+
+    // 🔒 RESTRICTION: Only Admin can cancel orders
+    if (status === "cancelled") {
+      const { role } = req.body;
+      if (role !== "admin") {
+        return res.status(403).json({ 
+          success: false, 
+          message: "Permission denied. Only Admins can cancel orders." 
+        });
+      }
     }
 
     if (status !== "completed") {

@@ -22,24 +22,30 @@ const users = db.collection("userCollection");
 // ================= CREATE PAYMENT =================
 router.post("/create", async (req, res) => {
   try {
-    const amount = Number(req.body.amount);
+    const amountUSD = Number(req.body.amount); // amount is in USD from frontend
     const email = req.body.email; // ✅ LOGIN USER EMAIL
 
     if (!email) {
       return res.status(400).json({ success: false, message: "Email required" });
     }
 
-    if (!amount || amount <= 0) {
+    if (!amountUSD || amountUSD <= 0) {
       return res.status(400).json({ success: false, message: "Invalid amount" });
     }
 
+    // Fetch exchange rate
+    const settingsColl = db.collection("settings");
+    const config = await settingsColl.findOne({ _id: "config" });
+    const rate = config?.ngnToUsdRate || 1500;
+
+    const amountNGN = Math.round(amountUSD * rate);
     const tx_ref = "flw-" + Date.now();
 
     const payload = {
       tx_ref,
-      amount,
-      currency: "USD",
-      redirect_url: `https://dashing-zuccutto-cb094a.netlify.app/payment?tx_ref=${tx_ref}`,
+      amount: amountNGN,
+      currency: "NGN",
+      redirect_url: `http://localhost:3000/payment?tx_ref=${tx_ref}`,
       customer: {
         email, // REQUIRED BY FLUTTERWAVE
       },
@@ -55,7 +61,10 @@ router.post("/create", async (req, res) => {
     await payments.insertOne({
       tx_ref,
       customerEmail: email,
-      amount,
+      amountUSD,
+      amountNGN,
+      appliedRate: rate,
+      amount: amountNGN, // legacy
       status: "pending",
       credited: false,
       createdAt: new Date(),
@@ -100,9 +109,11 @@ router.get("/verify", async (req, res) => {
       }
     );
 
+    // ✅ ADD BALANCE (IN USD)
+    const creditAmount = payment.amountUSD || (payment.amount / (payment.appliedRate || 1));
     await users.updateOne(
       { email: payment.customerEmail },
-      { $inc: { balance: Number(payment.amount) } }
+      { $inc: { balance: Number(creditAmount.toFixed(2)) } }
     );
 
     res.json({ success: true });

@@ -22,19 +22,27 @@ const users = db.collection("userCollection");
 // ================= CREATE PAYMENT =================
 router.post("/create", async (req, res) => {
   try {
-    const { amount, email } = req.body;
+    const { amount, email } = req.body; // amount is in USD from frontend
 
     if (!amount || !email) {
       return res.status(400).json({ message: "Invalid payload" });
     }
 
+    // Fetch exchange rate
+    const settingsColl = db.collection("settings");
+    const config = await settingsColl.findOne({ _id: "config" });
+    const rate = config?.ngnToUsdRate || 1500;
+
+    const amountUSD = Number(amount);
+    const amountNGN = Math.round(amountUSD * rate);
+
     const reference = "kora-" + Date.now();
 
     const payload = {
-      amount: String(amount), // Korapay requires string
+      amount: String(amountNGN), // Korapay requires string of NGN
       currency: "NGN",
       reference,
-      redirect_url: `https://dashing-zuccutto-cb094a.netlify.app/payment?reference=${reference}`,
+      redirect_url: `http://localhost:3000/payment?reference=${reference}`,
       customer: {
         email, // ✅ LOGIN USER EMAIL
       },
@@ -55,7 +63,10 @@ router.post("/create", async (req, res) => {
     await payments.insertOne({
       reference,
       customerEmail: email,
-      amount: Number(amount),
+      amountUSD,
+      amountNGN,
+      appliedRate: rate,
+      amount: amountNGN, // Keep for legacy/compat
       method: "korapay",
       status: "pending",
       credited: false,
@@ -107,10 +118,11 @@ router.get("/verify", async (req, res) => {
       }
     );
 
-    // ✅ ADD BALANCE
+    // ✅ ADD BALANCE (IN USD)
+    const creditAmount = payment.amountUSD || (payment.amount / (payment.appliedRate || 1));
     await users.updateOne(
       { email: payment.customerEmail },
-      { $inc: { balance: payment.amount } }
+      { $inc: { balance: Number(creditAmount.toFixed(2)) } }
     );
 
     res.json({ success: true });
@@ -142,9 +154,11 @@ router.post("/webhook", async (req, res) => {
         }
       );
 
+      // ✅ ADD BALANCE (IN USD)
+      const creditAmount = payment.amountUSD || (payment.amount / (payment.appliedRate || 1));
       await users.updateOne(
         { email: payment.customerEmail },
-        { $inc: { balance: payment.amount } }
+        { $inc: { balance: Number(creditAmount.toFixed(2)) } }
       );
     }
 

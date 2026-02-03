@@ -89,7 +89,13 @@ router.get("/", async (req, res) => {
   try {
     let doc = await settingsCollection.findOne({ _id: "config" });
     if (!doc) {
-      doc = { _id: "config", registrationFee: 15, buyerDepositRate: 0, sellerWithdrawalRate: 0 };
+      doc = {
+        _id: "config",
+        registrationFee: 15,
+        buyerDepositRate: 0,
+        sellerWithdrawalRate: 0,
+        ngnToUsdRate: 1500 // Default rate
+      };
       await settingsCollection.insertOne(doc);
     }
     res.json({ success: true, settings: doc });
@@ -99,10 +105,15 @@ router.get("/", async (req, res) => {
   }
 });
 
-// POST /api/settings -> update settings (body: { registrationFee })
+// POST /api/settings -> update settings
 router.post("/", async (req, res) => {
   try {
-    const { registrationFee, buyerDepositRate, sellerWithdrawalRate } = req.body;
+    const {
+      registrationFee,
+      buyerDepositRate,
+      sellerWithdrawalRate,
+      ngnToUsdRate
+    } = req.body;
 
     const update = {};
 
@@ -125,6 +136,13 @@ router.post("/", async (req, res) => {
         return res.status(400).json({ success: false, message: "Invalid sellerWithdrawalRate (0-100)" });
       }
       update.sellerWithdrawalRate = Number(sellerWithdrawalRate);
+    }
+
+    if (ngnToUsdRate !== undefined) {
+      if (isNaN(Number(ngnToUsdRate)) || Number(ngnToUsdRate) <= 0) {
+        return res.status(400).json({ success: false, message: "Invalid ngnToUsdRate (must be > 0)" });
+      }
+      update.ngnToUsdRate = Number(ngnToUsdRate);
     }
 
     if (Object.keys(update).length === 0) {
