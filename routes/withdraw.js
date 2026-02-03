@@ -514,6 +514,7 @@
 const express = require("express");
 const { MongoClient, ObjectId } = require("mongodb");
 const { processKorapayPayout, processFlutterwavePayout } = require("../utils/payout");
+const { sendEmail, getWithdrawalSuccessTemplate } = require("../utils/email");
 
 const router = express.Router();
 
@@ -681,7 +682,7 @@ router.post("/post", async (req, res) => {
   }
 });
 
-// PUT: Approve a withdrawal by ID and trigger Automatic Payout
+// PUT: Approve a withdrawal by ID (Manual Pay)
 // Endpoint: PUT /withdraw/approve/:id
 router.put("/approve/:id", async (req, res) => {
   try {
@@ -705,51 +706,41 @@ router.put("/approve/:id", async (req, res) => {
       return res.status(400).send({ message: `Withdrawal is already ${withdrawal.status}.` });
     }
 
-    // TRIGGER AUTOMATIC PAYOUT
-    let payoutResult = { success: false, error: "Unsupported payment method for auto-payout" };
-
-    if (withdrawal.paymentMethod === "korapay") {
-      payoutResult = await processKorapayPayout(withdrawal);
-    } else if (withdrawal.paymentMethod === "flutterwave" || withdrawal.paymentMethod === "flw") {
-      payoutResult = await processFlutterwavePayout(withdrawal);
-    } else {
-      // If it's manual (localbank), we just mark as approved
-      payoutResult = { success: true, manual: true };
-    }
-
-    if (!payoutResult.success) {
-      return res.status(500).send({
-        success: false,
-        message: "Payout failed",
-        error: payoutResult.error
-      });
-    }
-
+    // MANUAL APPROVAL ONLY - NO AUTO PAYOUT
     const result = await cartCollection.updateOne(
       { _id: new ObjectId(id) },
       {
         $set: {
-          status: payoutResult.manual ? "approved" : "completed",
+          status: "approved",
           approvedAt: new Date(),
-          payoutReference: payoutResult.reference || null,
-          payoutData: payoutResult.data || null,
-          autoPayout: !payoutResult.manual
+          autoPayout: false,
+          adminNote: "Manually approved by admin. Payment must be sent manually."
         },
       }
     );
 
+    // SEND EMAIL NOTIFICATION
+    try {
+      const emailHtml = getWithdrawalSuccessTemplate(withdrawal.fullName || "User");
+      await sendEmail({
+        to: withdrawal.email || withdrawal.userEmail,
+        subject: "Your Withdrawal Was Successful",
+        html: emailHtml,
+      });
+    } catch (emailErr) {
+      console.error("Failed to send approval email:", emailErr);
+      // We don't block the response if email fails, but we log it
+    }
+
     res.status(200).send({
       success: true,
       modifiedCount: result.modifiedCount,
-      message: payoutResult.manual
-        ? "Withdrawal approved (Manual transfer required)."
-        : "Automatic payout successful. Withdrawal completed.",
-      reference: payoutResult.reference
+      message: "Withdrawal approved and notification sent.",
     });
 
   } catch (error) {
-    console.error("Approval/Payout Error:", error);
-    res.status(500).send({ message: "Internal Server Error during payout process" });
+    console.error("Approval Error:", error);
+    res.status(500).send({ message: "Internal Server Error" });
   }
 });
 
