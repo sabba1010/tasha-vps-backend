@@ -514,7 +514,7 @@
 const express = require("express");
 const { MongoClient, ObjectId } = require("mongodb");
 const { processKorapayPayout, processFlutterwavePayout } = require("../utils/payout");
-const { sendEmail, getWithdrawalSuccessTemplate } = require("../utils/email");
+const { sendEmail, getWithdrawalSuccessTemplate, getWithdrawalDeclineTemplate } = require("../utils/email");
 
 const router = express.Router();
 
@@ -721,12 +721,25 @@ router.put("/approve/:id", async (req, res) => {
 
     // SEND EMAIL NOTIFICATION
     try {
-      const emailHtml = getWithdrawalSuccessTemplate(withdrawal.fullName || "User");
-      await sendEmail({
-        to: withdrawal.email || withdrawal.userEmail,
-        subject: "Your Withdrawal Was Successful",
-        html: emailHtml,
-      });
+      const recipientEmail = withdrawal.userEmail || withdrawal.email;
+      if (recipientEmail) {
+        // Fetch the actual user to get the logged-in name
+        const userDoc = await userCollection.findOne({ _id: new ObjectId(withdrawal.userId) });
+
+        const emailHtml = getWithdrawalSuccessTemplate({
+          name: (userDoc && userDoc.name) ? userDoc.name : (withdrawal.fullName || "User"),
+          amountUSD: withdrawal.amountUSD || withdrawal.amount,
+          amountNGN: withdrawal.amountNGN || withdrawal.netAmountNGN,
+          rate: withdrawal.appliedRate || 1400,
+          transactionId: withdrawal._id.toString(),
+          withdrawalDetailsUrl: `https://acctempire.com/dashboard/withdrawals`
+        });
+        await sendEmail({
+          to: recipientEmail,
+          subject: "Your Withdrawal Was Successful",
+          html: emailHtml,
+        });
+      }
     } catch (emailErr) {
       console.error("Failed to send approval email:", emailErr);
       // We don't block the response if email fails, but we log it
@@ -789,7 +802,7 @@ router.put("/decline/:id", async (req, res) => {
     try {
       if (notificationCollection) {
         await notificationCollection.insertOne({
-          userEmail: withdrawal.email || withdrawal.userEmail || "",
+          userEmail: withdrawal.userEmail || "", // Always use account email
           title: "Withdrawal Declined",
           message: reason || "Your withdrawal request was declined.",
           type: "withdrawal",
@@ -800,6 +813,29 @@ router.put("/decline/:id", async (req, res) => {
       }
     } catch (e) {
       console.error('Notification insert error:', e);
+    }
+
+    // SEND EMAIL NOTIFICATION
+    try {
+      const recipientEmail = withdrawal.userEmail || withdrawal.email;
+      if (recipientEmail) {
+        // Fetch the actual user to get the logged-in name
+        const userDoc = await userCollection.findOne({ _id: new ObjectId(withdrawal.userId) });
+
+        const emailHtml = getWithdrawalDeclineTemplate({
+          name: (userDoc && userDoc.name) ? userDoc.name : (withdrawal.fullName || "User"),
+          amountUSD: withdrawal.amountUSD || withdrawal.amount,
+          reason: reason || "Your withdrawal request was declined.",
+          transactionId: id
+        });
+        await sendEmail({
+          to: recipientEmail,
+          subject: "Withdrawal Request Declined",
+          html: emailHtml,
+        });
+      }
+    } catch (emailErr) {
+      console.error("Failed to send decline email:", emailErr);
     }
 
     res.status(200).send({ success: true, message: "Withdrawal declined and user refunded." });
