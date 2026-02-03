@@ -33,10 +33,10 @@ router.post("/create", async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid amount" });
     }
 
-    // Fetch exchange rate
+    // Fetch exchange rate (Deposit Rate)
     const settingsColl = db.collection("settings");
     const config = await settingsColl.findOne({ _id: "config" });
-    const rate = config?.ngnToUsdRate || 1500;
+    const rate = config?.depositRate || config?.ngnToUsdRate || 1500;
 
     const amountNGN = Math.round(amountUSD * rate);
     const tx_ref = "flw-" + Date.now();

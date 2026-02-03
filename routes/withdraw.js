@@ -520,7 +520,7 @@ const router = express.Router();
 const MONGO_URI = process.env.MONGO_URI;
 
 if (!MONGO_URI) {
-    throw new Error("Please define the MONGO_URI environment variable.");
+  throw new Error("Please define the MONGO_URI environment variable.");
 }
 
 // Create MongoDB client
@@ -534,19 +534,19 @@ let notificationCollection;
 let db;
 // Connect to MongoDB once when the module loads
 (async () => {
-    try {
-        await client.connect();
+  try {
+    await client.connect();
 
-        // const db = client.db("mydb");
-        db = client.db("mydb");
-        cartCollection = db.collection("withdraw"); 
-        userCollection = db.collection("userCollection");
-        withdrawalCollection = db.collection("withdraw");
-        notificationCollection = db.collection("notifiCollection");
-    } catch (error) {
-        console.error("Failed to connect to MongoDB:", error);
-        process.exit(1); // Exit if connection fails
-    }
+    // const db = client.db("mydb");
+    db = client.db("mydb");
+    cartCollection = db.collection("withdraw");
+    userCollection = db.collection("userCollection");
+    withdrawalCollection = db.collection("withdraw");
+    notificationCollection = db.collection("notifiCollection");
+  } catch (error) {
+    console.error("Failed to connect to MongoDB:", error);
+    process.exit(1); // Exit if connection fails
+  }
 })();
 
 // POST: Create a new withdrawal request
@@ -616,18 +616,25 @@ router.post("/post", async (req, res) => {
         // 2. Create withdrawal request and compute fee/net using settings
         const settingsCol = db.collection("settings");
         const settingsDoc = await settingsCol.findOne({ _id: "config" });
-        const rate = (settingsDoc && settingsDoc.sellerWithdrawalRate) ? Number(settingsDoc.sellerWithdrawalRate) : 0;
-        const feeAmount = Number(((withdrawAmount * rate) / 100).toFixed(2));
-        const netAmount = Number((withdrawAmount - feeAmount).toFixed(2));
+        const adminFeeRate = (settingsDoc && settingsDoc.sellerWithdrawalRate) ? Number(settingsDoc.sellerWithdrawalRate) : 0;
+        const withdrawRate = (settingsDoc && settingsDoc.withdrawRate) ? Number(settingsDoc.withdrawRate) : 1400;
+
+        const feeAmount = Number(((withdrawAmount * adminFeeRate) / 100).toFixed(2));
+        const netAmountUSD = Number((withdrawAmount - feeAmount).toFixed(2));
+        const amountNGN = Math.round(netAmountUSD * withdrawRate);
 
         const insertResult = await withdrawalCollection.insertOne({
           userId: userObjectId,
           userEmail: user.email,
           paymentMethod,
-          amount: withdrawAmount.toString(), // requested amount
+          amount: withdrawAmount.toString(), // requested amount in USD
+          amountUSD: withdrawAmount,
+          amountNGN: amountNGN,
+          appliedRate: withdrawRate,
           fee: feeAmount.toString(),
-          netAmount: netAmount.toString(),
-          feeRate: rate,
+          netAmount: netAmountUSD.toString(), // net in USD
+          netAmountNGN: amountNGN,
+          feeRate: adminFeeRate,
           currency,
           accountNumber,
           bankCode,
@@ -664,41 +671,41 @@ router.post("/post", async (req, res) => {
 // PUT: Approve a withdrawal by ID
 // Endpoint: PUT /withdraw/approve/:id
 router.put("/approve/:id", async (req, res) => {
-    try {
-        if (!cartCollection) {
-            return res.status(503).send({ message: "Database not ready yet." });
-        }
-
-        const { id } = req.params;
-
-        // Validate ObjectId format
-        if (!ObjectId.isValid(id)) {
-            return res.status(400).send({ message: "Invalid withdrawal ID format." });
-        }
-
-        const result = await cartCollection.updateOne(
-            { _id: new ObjectId(id) },
-            {
-                $set: {
-                    status: "approved",
-                    approvedAt: new Date(),
-                },
-            }
-        );
-
-        if (result.matchedCount === 0) {
-            return res.status(404).send({ message: "Withdrawal request not found." });
-        }
-
-        res.status(200).send({
-            success: true,
-            modifiedCount: result.modifiedCount,
-            message: "Withdrawal approved successfully.",
-        });
-    } catch (error) {
-        console.error("Update Error:", error);
-        res.status(500).send({ message: "Internal Server Error" });
+  try {
+    if (!cartCollection) {
+      return res.status(503).send({ message: "Database not ready yet." });
     }
+
+    const { id } = req.params;
+
+    // Validate ObjectId format
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid withdrawal ID format." });
+    }
+
+    const result = await cartCollection.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          status: "approved",
+          approvedAt: new Date(),
+        },
+      }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).send({ message: "Withdrawal request not found." });
+    }
+
+    res.status(200).send({
+      success: true,
+      modifiedCount: result.modifiedCount,
+      message: "Withdrawal approved successfully.",
+    });
+  } catch (error) {
+    console.error("Update Error:", error);
+    res.status(500).send({ message: "Internal Server Error" });
+  }
 });
 
 // PUT: Decline a withdrawal request with reason and refund
@@ -769,43 +776,43 @@ router.put("/decline/:id", async (req, res) => {
 // GET: Get all withdrawal requests (for admin)
 // Endpoint: GET /withdraw/getall
 router.get("/getall", async (req, res) => {
-    try {
-        if (!cartCollection) {
-            return res.status(503).send({ message: "Database not ready yet." });
-        }
-
-        const withdrawals = await cartCollection
-            .find({})
-            .sort({ createdAt: -1 }) // Latest first
-            .toArray();
-
-        res.status(200).send(withdrawals);
-    } catch (error) {
-        console.error("Fetch Error:", error);
-        res.status(500).send({ message: "Failed to fetch withdrawals." });
+  try {
+    if (!cartCollection) {
+      return res.status(503).send({ message: "Database not ready yet." });
     }
+
+    const withdrawals = await cartCollection
+      .find({})
+      .sort({ createdAt: -1 }) // Latest first
+      .toArray();
+
+    res.status(200).send(withdrawals);
+  } catch (error) {
+    console.error("Fetch Error:", error);
+    res.status(500).send({ message: "Failed to fetch withdrawals." });
+  }
 });
 
 router.get("/get/:id", async (req, res) => {
-    try {
-        if (!cartCollection) return res.status(503).send({ message: "DB not ready" });
+  try {
+    if (!cartCollection) return res.status(503).send({ message: "DB not ready" });
 
-        const { id } = req.params;
+    const { id } = req.params;
 
-        if (!ObjectId.isValid(id)) {
-            return res.status(400).send({ message: "Invalid withdrawal ID format" });
-        }
-
-        const withdrawal = await cartCollection.findOne({ _id: new ObjectId(id) });
-
-        if (!withdrawal) {
-            return res.status(404).send({ message: "Withdrawal not found" });
-        }
-
-        res.status(200).send(withdrawal);
-    } catch (error) {
-        console.error("Fetch Single Error:", error);
-        res.status(500).send({ message: "Server error" });
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid withdrawal ID format" });
     }
+
+    const withdrawal = await cartCollection.findOne({ _id: new ObjectId(id) });
+
+    if (!withdrawal) {
+      return res.status(404).send({ message: "Withdrawal not found" });
+    }
+
+    res.status(200).send(withdrawal);
+  } catch (error) {
+    console.error("Fetch Single Error:", error);
+    res.status(500).send({ message: "Server error" });
+  }
 });
 module.exports = router;

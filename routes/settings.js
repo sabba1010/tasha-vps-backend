@@ -94,10 +94,14 @@ router.get("/", async (req, res) => {
         registrationFee: 15,
         buyerDepositRate: 0,
         sellerWithdrawalRate: 0,
-        ngnToUsdRate: 1500 // Default rate
+        depositRate: 1500,
+        withdrawRate: 1400
       };
       await settingsCollection.insertOne(doc);
     }
+    // Backward compatibility for any frontend/logic still using ngnToUsdRate
+    if (!doc.ngnToUsdRate) doc.ngnToUsdRate = doc.depositRate || 1500;
+
     res.json({ success: true, settings: doc });
   } catch (err) {
     console.error("GET /api/settings error:", err);
@@ -112,6 +116,8 @@ router.post("/", async (req, res) => {
       registrationFee,
       buyerDepositRate,
       sellerWithdrawalRate,
+      depositRate,
+      withdrawRate,
       ngnToUsdRate
     } = req.body;
 
@@ -138,11 +144,27 @@ router.post("/", async (req, res) => {
       update.sellerWithdrawalRate = Number(sellerWithdrawalRate);
     }
 
-    if (ngnToUsdRate !== undefined) {
+    if (depositRate !== undefined) {
+      if (isNaN(Number(depositRate)) || Number(depositRate) <= 0) {
+        return res.status(400).json({ success: false, message: "Invalid depositRate (must be > 0)" });
+      }
+      update.depositRate = Number(depositRate);
+      // Keep ngnToUsdRate in sync for legacy
+      update.ngnToUsdRate = Number(depositRate);
+    } else if (ngnToUsdRate !== undefined) {
+      // If only ngnToUsdRate is sent, treat it as depositRate
       if (isNaN(Number(ngnToUsdRate)) || Number(ngnToUsdRate) <= 0) {
         return res.status(400).json({ success: false, message: "Invalid ngnToUsdRate (must be > 0)" });
       }
+      update.depositRate = Number(ngnToUsdRate);
       update.ngnToUsdRate = Number(ngnToUsdRate);
+    }
+
+    if (withdrawRate !== undefined) {
+      if (isNaN(Number(withdrawRate)) || Number(withdrawRate) <= 0) {
+        return res.status(400).json({ success: false, message: "Invalid withdrawRate (must be > 0)" });
+      }
+      update.withdrawRate = Number(withdrawRate);
     }
 
     if (Object.keys(update).length === 0) {
