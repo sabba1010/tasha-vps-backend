@@ -9,31 +9,31 @@ require("dotenv").config();
  * @param {string} options.html - Email body in HTML
  */
 const sendEmail = async ({ to, subject, html }) => {
-  try {
-    const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || "smtp.gmail.com",
-      port: process.env.SMTP_PORT || 587,
-      secure: false, // true for 465, false for other ports
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
+    try {
+        const transporter = nodemailer.createTransport({
+            host: process.env.SMTP_HOST || "smtp.gmail.com",
+            port: process.env.SMTP_PORT || 587,
+            secure: false, // true for 465, false for other ports
+            auth: {
+                user: process.env.SMTP_USER,
+                pass: process.env.SMTP_PASS,
+            },
+        });
 
-    const mailOptions = {
-      from: `"AcctEmpire" <${process.env.SMTP_FROM || "noreply@acctempire.com"}>`,
-      to,
-      subject,
-      html,
-    };
+        const mailOptions = {
+            from: `"AcctEmpire" <${process.env.SMTP_FROM || "noreply@acctempire.com"}>`,
+            to,
+            subject,
+            html,
+        };
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log("Email sent: %s", info.messageId);
-    return { success: true, messageId: info.messageId };
-  } catch (error) {
-    console.error("Error sending email:", error);
-    return { success: false, error: error.message };
-  }
+        const info = await transporter.sendMail(mailOptions);
+        console.log("Email sent: %s", info.messageId);
+        return { success: true, messageId: info.messageId };
+    } catch (error) {
+        console.error("Error sending email:", error);
+        return { success: false, error: error.message };
+    }
 };
 
 /**
@@ -48,7 +48,7 @@ const sendEmail = async ({ to, subject, html }) => {
  * @returns {string} - HTML email template
  */
 const getWithdrawalSuccessTemplate = ({ name, amountUSD, amountNGN, rate, transactionId, withdrawalDetailsUrl }) => {
-  return `
+    return `
     <!DOCTYPE html>
     <html>
     <head>
@@ -143,7 +143,7 @@ const getWithdrawalSuccessTemplate = ({ name, amountUSD, amountNGN, rate, transa
    * @returns {string} - HTML email template
    */
 const getWithdrawalDeclineTemplate = ({ name, amountUSD, reason, transactionId }) => {
-  return `
+    return `
     <!DOCTYPE html>
     <html>
     <head>
@@ -208,8 +208,80 @@ const getWithdrawalDeclineTemplate = ({ name, amountUSD, reason, transactionId }
     `;
 };
 
+/**
+ * Get the withdrawal pending email template.
+ * @param {Object} data - Withdrawal details
+ * @param {string} data.name - User's name
+ * @param {string|number} data.amountUSD - Amount in USD
+ * @param {string} data.transactionId - Transaction/Withdrawal ID
+ * @returns {string} - HTML email template
+ */
+const getWithdrawalPendingTemplate = ({ name, amountUSD, transactionId }) => {
+    return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Withdrawal Request Received</title>
+        <style>
+            body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #0c0c0c; color: #ffffff; }
+            .container { max-width: 600px; margin: 20px auto; background-color: #141414; border-radius: 12px; overflow: hidden; border: 1px solid #222; }
+            .header { padding: 40px 20px; text-align: center; background: linear-gradient(135deg, #1a1a1a 0%, #0c0c0c 100%); border-bottom: 1px solid #222; }
+            .logo { width: 50px; height: 50px; margin-bottom: 15px; }
+            .content { padding: 40px 30px; }
+            h1 { color: #ffffff; font-size: 24px; margin: 0 0 10px; font-weight: 700; }
+            p { color: #a0a0a0; font-size: 16px; line-height: 1.6; margin: 0 0 20px; }
+            .pending-box { background-color: rgba(255, 165, 0, 0.05); border-radius: 8px; padding: 25px; margin: 30px 0; border: 1px solid rgba(255, 165, 0, 0.2); }
+            .pending-title { font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #ffa500; margin-bottom: 15px; font-weight: 600; }
+            .summary-item { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px; color: #888; }
+            .summary-value { color: #ccc; }
+            .btn-container { text-align: center; margin-top: 35px; }
+            .btn { background-color: #333; color: #ffffff; padding: 12px 30px; text-decoration: none; font-weight: 600; border-radius: 8px; display: inline-block; }
+            .footer { padding: 30px; text-align: center; font-size: 13px; color: #555; background-color: #0c0c0c; border-top: 1px solid #222; }
+            .footer a { color: #ff4d00; text-decoration: none; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <div style="font-size: 28px; font-weight: 800; color: #ff4d00; letter-spacing: -1px;">AcctEmpire</div>
+            </div>
+            <div class="content">
+                <h1>Withdrawal Received</h1>
+                <p>Hey ${name},</p>
+                <p>We've received your withdrawal request. Our team is currently reviewing it, and you'll receive another email once it's processed.</p>
+                
+                <div class="pending-box">
+                    <div class="pending-title">Request Status: Pending</div>
+                    <div style="border-top: 1px solid #222; padding-top: 20px;">
+                        <div class="summary-item">
+                            <span>Amount:</span>
+                            <span class="summary-value">$${amountUSD}</span>
+                        </div>
+                        <div class="summary-item">
+                            <span>Transaction ID:</span>
+                            <span class="summary-value">${transactionId}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="btn-container">
+                    <a href="https://acctempire.com/dashboard/withdrawals" class="btn">View Status</a>
+                </div>
+            </div>
+            <div class="footer">
+                <p>If you have questions, please contact <a href="mailto:help@acctempire.com">help@acctempire.com</a></p>
+                <p>&copy; ${new Date().getFullYear()} AcctEmpire Team</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    `;
+};
+
 module.exports = {
-  sendEmail,
-  getWithdrawalSuccessTemplate,
-  getWithdrawalDeclineTemplate,
+    sendEmail,
+    getWithdrawalSuccessTemplate,
+    getWithdrawalDeclineTemplate,
+    getWithdrawalPendingTemplate,
 };

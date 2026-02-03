@@ -514,7 +514,7 @@
 const express = require("express");
 const { MongoClient, ObjectId } = require("mongodb");
 const { processKorapayPayout, processFlutterwavePayout } = require("../utils/payout");
-const { sendEmail, getWithdrawalSuccessTemplate, getWithdrawalDeclineTemplate } = require("../utils/email");
+const { sendEmail, getWithdrawalSuccessTemplate, getWithdrawalDeclineTemplate, getWithdrawalPendingTemplate } = require("../utils/email");
 
 const router = express.Router();
 
@@ -666,6 +666,25 @@ router.post("/post", async (req, res) => {
           withdrawalId: withdrawalId.toString(),
           status: "pending"
         });
+
+        // SEND PENDING EMAIL NOTIFICATION
+        try {
+          const recipientEmail = user.email; // Account email (already fetched)
+          if (recipientEmail) {
+            const emailHtml = getWithdrawalPendingTemplate({
+              name: user.name || "User",
+              amountUSD: withdrawAmount,
+              transactionId: withdrawalId.toString()
+            });
+            await sendEmail({
+              to: recipientEmail,
+              subject: "Withdrawal Request Received",
+              html: emailHtml,
+            });
+          }
+        } catch (emailErr) {
+          console.error("Failed to send pending email:", emailErr);
+        }
       });
     } finally {
       await session.endSession();
@@ -699,11 +718,11 @@ router.put("/approve/:id", async (req, res) => {
 
     const withdrawal = await cartCollection.findOne({ _id: new ObjectId(id) });
     if (!withdrawal) {
-      return res.status(404).send({ message: "Withdrawal request not found." });
+      return res.status(404).json({ message: "Withdrawal request not found." });
     }
 
     if (withdrawal.status !== "pending") {
-      return res.status(400).send({ message: `Withdrawal is already ${withdrawal.status}.` });
+      return res.status(400).json({ message: `Withdrawal is already ${withdrawal.status}.` });
     }
 
     // MANUAL APPROVAL ONLY - NO AUTO PAYOUT
@@ -721,7 +740,7 @@ router.put("/approve/:id", async (req, res) => {
 
     // SEND EMAIL NOTIFICATION
     try {
-      const recipientEmail = withdrawal.userEmail || withdrawal.email;
+      const recipientEmail = withdrawal.userEmail;
       if (recipientEmail) {
         // Fetch the actual user to get the logged-in name
         const userDoc = await userCollection.findOne({ _id: new ObjectId(withdrawal.userId) });
@@ -742,7 +761,6 @@ router.put("/approve/:id", async (req, res) => {
       }
     } catch (emailErr) {
       console.error("Failed to send approval email:", emailErr);
-      // We don't block the response if email fails, but we log it
     }
 
     res.status(200).send({
@@ -785,7 +803,7 @@ router.put("/decline/:id", async (req, res) => {
     );
 
     if (updateRes.matchedCount === 0) {
-      return res.status(404).send({ message: "Withdrawal request not found when updating." });
+      return res.status(404).json({ message: "Withdrawal request not found when updating." });
     }
 
     // Refund user balance if userId exists
@@ -817,7 +835,7 @@ router.put("/decline/:id", async (req, res) => {
 
     // SEND EMAIL NOTIFICATION
     try {
-      const recipientEmail = withdrawal.userEmail || withdrawal.email;
+      const recipientEmail = withdrawal.userEmail;
       if (recipientEmail) {
         // Fetch the actual user to get the logged-in name
         const userDoc = await userCollection.findOne({ _id: new ObjectId(withdrawal.userId) });
@@ -841,7 +859,7 @@ router.put("/decline/:id", async (req, res) => {
     res.status(200).send({ success: true, message: "Withdrawal declined and user refunded." });
   } catch (error) {
     console.error("Decline Error:", error);
-    res.status(500).send({ message: "Internal Server Error" });
+    res.status(500).json({ message: "Internal Server Error" });
   }
 });
 
@@ -861,7 +879,7 @@ router.get("/getall", async (req, res) => {
     res.status(200).send(withdrawals);
   } catch (error) {
     console.error("Fetch Error:", error);
-    res.status(500).send({ message: "Failed to fetch withdrawals." });
+    res.status(500).json({ message: "Failed to fetch withdrawals." });
   }
 });
 
@@ -872,19 +890,19 @@ router.get("/get/:id", async (req, res) => {
     const { id } = req.params;
 
     if (!ObjectId.isValid(id)) {
-      return res.status(400).send({ message: "Invalid withdrawal ID format" });
+      return res.status(400).json({ message: "Invalid withdrawal ID format" });
     }
 
     const withdrawal = await cartCollection.findOne({ _id: new ObjectId(id) });
 
     if (!withdrawal) {
-      return res.status(404).send({ message: "Withdrawal not found" });
+      return res.status(404).json({ message: "Withdrawal not found" });
     }
 
     res.status(200).send(withdrawal);
   } catch (error) {
     console.error("Fetch Single Error:", error);
-    res.status(500).send({ message: "Server error" });
+    res.status(500).json({ message: "Server error" });
   }
 });
 module.exports = router;

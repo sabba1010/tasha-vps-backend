@@ -103,7 +103,7 @@ router.post("/notify", async (req, res) => {
       read: false 
     };
     const result = await notification.insertOne(data);
-    res.send(result);
+    res.json(result);
   } catch (err) {
     res.status(500).send(err);
   }
