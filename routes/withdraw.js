@@ -620,13 +620,13 @@ router.post("/post", async (req, res) => {
           throw new Error("Failed to update user balance");
         }
 
-        // 2. Create withdrawal record (Instant & No Fees)
+        // 2. Create withdrawal record (Pending Approval)
         const settingsCol = db.collection("settings");
         const settingsDoc = await settingsCol.findOne({ _id: "config" });
-        // User requested NO FEES, but we still fetch the rate
+        // Fetch current rate
         const withdrawRate = (settingsDoc && settingsDoc.withdrawRate) ? Number(settingsDoc.withdrawRate) : 1400;
 
-        const feeAmount = 0; // Forced to 0 as requested
+        const feeAmount = 0; // No fees
         const netAmountUSD = withdrawAmount;
         const amountNGN = Math.round(netAmountUSD * withdrawRate);
 
@@ -650,7 +650,7 @@ router.post("/post", async (req, res) => {
           phoneNumber: phoneNumber || null,
           email: email || user.email,
           note: note || "",
-          status: "processing", // Initial state
+          status: "pending", // ALWAYS PENDING
           adminNote: "",
           createdAt: new Date(),
           updatedAt: new Date()
@@ -659,87 +659,18 @@ router.post("/post", async (req, res) => {
         const insertResult = await withdrawalCollection.insertOne(withdrawalDoc, { session });
         const withdrawalId = insertResult.insertedId;
 
-        // 3. ATTEMPT INSTANT PAYOUT (Bypassing Admin Approval)
-        let payoutResult = { success: false, error: "Auto-payout skipped" };
-        const payoutRecord = { ...withdrawalDoc, _id: withdrawalId };
-
-        if (paymentMethod === "korapay" || paymentMethod === "kora") {
-          payoutResult = await processKorapayPayout(payoutRecord);
-        } else if (paymentMethod === "flutterwave" || paymentMethod === "flw") {
-          payoutResult = await processFlutterwavePayout(payoutRecord);
-        } else {
-          // Manual fallback (if they choose something non-auto)
-          payoutResult = { success: true, manual: true };
-        }
-
-        if (payoutResult.success) {
-          await withdrawalCollection.updateOne(
-            { _id: withdrawalId },
-            {
-              $set: {
-                status: payoutResult.manual ? "approved" : "completed",
-                payoutReference: payoutResult.reference || null,
-                payoutData: payoutResult.data || null,
-                autoPayout: !payoutResult.manual,
-                updatedAt: new Date()
-              }
-            },
-            { session }
-          );
-
-          res.status(201).json({
-            success: true,
-            message: payoutResult.manual
-              ? "Withdrawal approved. Manual processing required."
-              : "Withdrawal completed successfully and funds sent.",
-            withdrawalId: withdrawalId.toString(),
-            status: payoutResult.manual ? "approved" : "completed"
-          });
-        } else {
-          // PAYOUT FAILED -> REFUND USER IMMEDIATELY
-          await userCollection.updateOne(
-            { _id: userObjectId },
-            { $inc: { balance: withdrawAmount } },
-            { session }
-          );
-
-          await withdrawalCollection.updateOne(
-            { _id: withdrawalId },
-            {
-              $set: {
-                status: "failed",
-                adminNote: payoutResult.error,
-                updatedAt: new Date()
-              }
-            },
-            { session }
-          );
-
-          // LOG ERROR TO FILE
-          const fs = require('fs');
-          const logMsg = `[${new Date().toISOString()}] Payout Failed: ${JSON.stringify(payoutResult.error)}\nPayload: ${JSON.stringify(withdrawalDoc)}\n`;
-          try { fs.appendFileSync('debug_payout.log', logMsg); } catch (e) { }
-
-          res.status(422).json({
-            success: false,
-            message: "Instant payout failed. Your balance has been refunded.",
-            error: payoutResult.error
-          });
-        }
+        res.status(201).json({
+          success: true,
+          message: "Withdrawal request submitted successfully. Waiting for admin approval.",
+          withdrawalId: withdrawalId.toString(),
+          status: "pending"
+        });
       });
     } finally {
       await session.endSession();
     }
   } catch (error) {
-    console.error("Instant Withdrawal error:", error);
-
-    // Safely attempt to log to file
-    const fs = require('fs');
-    try {
-      const logMsg = `[${new Date().toISOString()}] CRITICAL ERROR: ${error.message}\nStack: ${error.stack}\n`;
-      fs.appendFileSync('debug_payout.log', logMsg);
-    } catch (e) { }
-
+    console.error("Withdrawal submission error:", error);
     if (!res.headersSent) {
       res.status(500).json({
         success: false,
