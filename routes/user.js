@@ -956,19 +956,34 @@ router.post("/become-seller", async (req, res) => {
 
     const newBalance = currentBalance - fee;
 
-    const result = await users.updateOne(
-      { email },
-      { $set: { balance: newBalance, role: "seller", subscribedPlan: "free", salesCredit: 10 } }
-    );
+    // session transaction add kora holo for balance consistency
+    const session = client.startSession();
+    try {
+      await session.withTransaction(async () => {
+        // 1. Deduct from user
+        await users.updateOne(
+          { email },
+          { $set: { balance: newBalance, role: "seller", subscribedPlan: "free", salesCredit: 10 } },
+          { session }
+        );
 
-    if (result.modifiedCount > 0) {
+        // 2. Credit to admin
+        await users.updateOne(
+          { email: "admin@gmail.com" },
+          { $inc: { balance: fee } },
+          { session }
+        );
+      });
+
       res.json({
         success: true,
-        message: "Upgraded to Seller",
+        message: "Upgraded to Seller. Registration fee credited to platform.",
         newBalance,
       });
-    } else {
-      res.status(400).json({ success: false, message: "Update failed" });
+    } catch (transErr) {
+      throw transErr;
+    } finally {
+      await session.endSession();
     }
   } catch (error) {
     res.status(500).json({ success: false, message: "Server Error" });
