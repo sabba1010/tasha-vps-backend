@@ -195,7 +195,7 @@ const getWithdrawalDeclineTemplate = ({ name, amountUSD, reason, transactionId }
                 </div>
 
                 <div class="btn-container">
-                    <a href="https://acctempire.com/dashboard/withdrawals" class="btn">View Dashboard</a>
+                    <a href="https://acctempire.com/wallet?tab=withdraw" class="btn">View Dashboard</a>
                 </div>
             </div>
             <div class="footer">
@@ -266,7 +266,7 @@ const getWithdrawalPendingTemplate = ({ name, amountUSD, transactionId }) => {
                 </div>
 
                 <div class="btn-container">
-                    <a href="https://acctempire.com/dashboard/withdrawals" class="btn">View Status</a>
+                    <a href="https://acctempire.com/wallet?tab=withdraw" class="btn">View Status</a>
                 </div>
             </div>
             <div class="footer">
