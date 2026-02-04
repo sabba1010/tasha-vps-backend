@@ -110,4 +110,79 @@ router.get("/summary", async (req, res) => {
     }
 });
 
+// =======================================================
+// 🚀 GET /reputation/seller/:email (Public/User)
+// =======================================================
+router.get("/seller/:email", async (req, res) => {
+    try {
+        const { email } = req.params;
+
+        // 1. Fetch seller data
+        const seller = await userCollection.findOne({ email });
+        if (!seller) {
+            return res.status(404).json({ success: false, message: "Seller not found" });
+        }
+
+        // 2. Fetch all relevant data for this seller
+        const [sellerRatings, sellerReports, sellerPurchases] = await Promise.all([
+            ratingCollection.find({ sellerEmail: email }).toArray(),
+            reportCollection.find({ sellerEmail: email }).toArray(),
+            purchaseCollection.find({ sellerEmail: email }).toArray()
+        ]);
+
+        // 3. Calculations
+        const totalReviews = sellerRatings.length;
+        const avgRating = totalReviews > 0
+            ? Number((sellerRatings.reduce((sum, r) => sum + r.rating, 0) / totalReviews).toFixed(1))
+            : 5.0;
+
+        const reportsCount = sellerReports.length;
+        const disputesCount = sellerReports.filter(r => r.status === "Refunded").length;
+
+        const completedOrders = sellerPurchases.filter(p => ["completed", "success"].includes(p.status?.toLowerCase())).length;
+        const cancelledOrders = sellerPurchases.filter(p => p.status?.toLowerCase() === "cancelled").length;
+        const totalInvolved = completedOrders + cancelledOrders;
+
+        const completionRate = totalInvolved > 0
+            ? Number(((completedOrders / totalInvolved) * 100).toFixed(1))
+            : 100;
+
+        // Reputation Score Formula
+        const baseScore = (avgRating / 5) * 50;
+        const completionBonus = (completionRate / 100) * 30;
+        const penalty = (reportsCount * 2) + (disputesCount * 5) + (cancelledOrders * 1);
+
+        const rawScore = baseScore + completionBonus - penalty;
+        const finalScore = Math.max(0, Math.min(100, Math.round(rawScore)));
+
+        // Status logic
+        let status = "normal";
+        if (finalScore >= 90 && totalReviews > 5) status = "verified";
+        if (finalScore < 50 || disputesCount > 3) status = "warning";
+        if (finalScore < 20) status = "at_risk";
+
+        res.status(200).json({
+            success: true,
+            data: {
+                sellerEmail: email,
+                sellerName: seller.name || email.split("@")[0],
+                avgRating,
+                totalReviews,
+                reportsCount,
+                disputesCount,
+                cancelledOrders,
+                completedOrders,
+                completionRate,
+                reputationScore: finalScore,
+                status,
+                joinedAt: seller.createdAt || null,
+                recentReviews: sellerRatings.slice(-10)
+            }
+        });
+    } catch (error) {
+        console.error("❌ Single Reputation Error:", error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 module.exports = router;
