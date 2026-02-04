@@ -78,6 +78,7 @@ const refarelRoute = require("./routes/refarel");
 const ratingRoute = require("./routes/rating");
 const adminsetingRoute = require("./routes/adminseting");
 const adminChat = require("./routes/adminChat");
+const reputationRoute = require("./routes/reputation");
 
 app.use("/api/adminchat", adminChat);
 app.use("/flutterwave", flutterwaveRoutes);
@@ -93,6 +94,7 @@ app.use("/withdraw", withdrawRoute);
 app.use("/purchase", purchaseRoute);
 app.use("/referral", refarelRoute);
 app.use("/rating", ratingRoute);
+app.use("/reputation", reputationRoute);
 
 // ---------------------------------------
 // PAYMENTS API
