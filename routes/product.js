@@ -120,20 +120,21 @@ router.post("/sell", async (req, res) => {
                     });
                 }
 
-                // STRICT REGEX VALIDATION
-                const strictRegex = /^(?:[1-9]\d{0,5}|1\d{6}|2[0-1]\d{5}|22[0-2]\d{4}|223[0-3]\d{3}|2234[0-1]\d{2}|22342[0-3]\d|223424)\smins$/;
+                // STRICT REGEX VALIDATION (Supports hours and mins)
+                const strictRegex = /^(?:[1-9]\d{0,3}|[1-3]\d{4}|3724)\s(hours?|mins?)$/;
                 if (!strictRegex.test(product.deliveryTime)) {
                     return res.status(400).json({
-                        message: `Invalid delivery time format for product: ${product.name || "unnamed"}. Must be "<number> mins" (max 223,424 mins). Example: "30 mins"`
+                        message: `Invalid delivery time format for product: ${product.name || "unnamed"}. Must be "<number> hours" or "<number> mins" (max 3724 hours). Example: "3 hours"`
                     });
                 }
 
-                // Numeric Check
-                const minutes = parseInt(product.deliveryTime.split(' ')[0], 10);
-                if (minutes > 223424) {
-                    return res.status(400).json({
-                        message: `Delivery time exceeds limit of 223,424 mins.`
-                    });
+                // Numeric Check (~155 days max)
+                const [valueStr, unit] = product.deliveryTime.split(' ');
+                const value = parseInt(valueStr, 10);
+                if (unit.startsWith('hour')) {
+                    if (value > 3724) return res.status(400).json({ message: "Delivery time exceeds limit of 3724 hours." });
+                } else {
+                    if (value > 223424) return res.status(400).json({ message: "Delivery time exceeds limit of 223,424 mins." });
                 }
             }
         }

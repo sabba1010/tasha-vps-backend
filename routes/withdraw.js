@@ -214,7 +214,152 @@
 //         res.status(500).send({ message: "Server error" });
 //     }
 // });
-// module.exports = router;
+// 
+// GET: Get withdrawal history for a specific user
+// Endpoint: GET /withdraw/user/:userId
+router.get("/user/:userId", async (req, res) => {
+  try {
+    if (!withdrawalCollection) {
+      return res.status(503).json({ message: "Database not ready" });
+    }
+
+    const { userId } = req.params;
+
+    if (!ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: "Invalid user ID format" });
+    }
+
+    const userObjectId = new ObjectId(userId);
+
+    const withdrawals = await withdrawalCollection
+      .find({ userId: userObjectId })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    res.status(200).json(withdrawals);
+  } catch (error) {
+    console.error("User withdrawal fetch error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// POST: Admin withdrawal (Platform Profit or System Turnover)
+// Endpoint: POST /withdraw/admin
+router.post("/admin", async (req, res) => {
+  try {
+    const {
+      withdrawalType,
+      amount,
+      accountNumber,
+      bankCode,
+      fullName,
+      bankName,
+      phoneNumber,
+      note
+    } = req.body;
+
+    if (!withdrawalType || !["profit", "turnover"].includes(withdrawalType)) {
+      return res.status(422).json({
+        success: false,
+        message: "Invalid withdrawalType. Must be 'profit' or 'turnover'"
+      });
+    }
+
+    if (!amount || Number(amount) <= 0) {
+      return res.status(422).json({
+        success: false,
+        message: "Invalid withdrawal amount"
+      });
+    }
+
+    if (!accountNumber || !bankCode || !fullName) {
+      return res.status(422).json({
+        success: false,
+        message: "Bank account details are required"
+      });
+    }
+
+    const withdrawAmount = Number(amount);
+    const adminUser = await userCollection.findOne({ email: "admin@gmail.com" });
+
+    if (!adminUser) {
+      return res.status(404).json({ success: false, message: "Admin user not found" });
+    }
+
+    let newBalance = adminUser.balance;
+
+    if (withdrawalType === "profit") {
+      const currentBalance = Number(adminUser.balance || 0);
+
+      if (currentBalance < withdrawAmount) {
+        return res.status(422).json({
+          success: false,
+          message: `Insufficient balance. Available: ${currentBalance}, Requested: ${withdrawAmount}`
+        });
+      }
+
+      await userCollection.updateOne(
+        { _id: adminUser._id },
+        { $inc: { balance: -withdrawAmount } }
+      );
+
+      newBalance = currentBalance - withdrawAmount;
+    }
+
+    const withdrawalDoc = {
+      userId: adminUser._id,
+      userEmail: adminUser.email,
+      withdrawalType,
+      isAdminWithdrawal: true,
+      paymentMethod: "admin",
+      amount: withdrawAmount.toString(),
+      amountUSD: withdrawAmount,
+      currency: "USD",
+      accountNumber,
+      bankCode,
+      fullName,
+      bankName: bankName || null,
+      phoneNumber: phoneNumber || null,
+      email: adminUser.email,
+      note: note || "",
+      status: "pending",
+      adminNote: "",
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    const insertResult = await withdrawalCollection.insertOne(withdrawalDoc);
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("withdrawal_status_update", {
+        userId: adminUser._id.toString(),
+        withdrawalId: insertResult.insertedId.toString(),
+        status: "pending",
+        newBalance: newBalance
+      });
+    }
+
+    res.status(201).json({
+      success: true,
+      message: "Admin withdrawal request submitted successfully",
+      withdrawalId: insertResult.insertedId.toString(),
+      withdrawalType,
+      newBalance: withdrawalType === "profit" ? newBalance : adminUser.balance
+    });
+
+  } catch (error) {
+    console.error("Admin withdrawal error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error during admin withdrawal",
+      error: error.message
+    });
+  }
+});
+
+
+module.exports = router;
 
 
 
@@ -505,7 +650,152 @@
 //         res.status(500).send({ message: "Server error" });
 //     }
 // });
-// module.exports = router;
+// 
+// GET: Get withdrawal history for a specific user
+// Endpoint: GET /withdraw/user/:userId
+router.get("/user/:userId", async (req, res) => {
+  try {
+    if (!withdrawalCollection) {
+      return res.status(503).json({ message: "Database not ready" });
+    }
+
+    const { userId } = req.params;
+
+    if (!ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: "Invalid user ID format" });
+    }
+
+    const userObjectId = new ObjectId(userId);
+
+    const withdrawals = await withdrawalCollection
+      .find({ userId: userObjectId })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    res.status(200).json(withdrawals);
+  } catch (error) {
+    console.error("User withdrawal fetch error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// POST: Admin withdrawal (Platform Profit or System Turnover)
+// Endpoint: POST /withdraw/admin
+router.post("/admin", async (req, res) => {
+  try {
+    const {
+      withdrawalType,
+      amount,
+      accountNumber,
+      bankCode,
+      fullName,
+      bankName,
+      phoneNumber,
+      note
+    } = req.body;
+
+    if (!withdrawalType || !["profit", "turnover"].includes(withdrawalType)) {
+      return res.status(422).json({
+        success: false,
+        message: "Invalid withdrawalType. Must be 'profit' or 'turnover'"
+      });
+    }
+
+    if (!amount || Number(amount) <= 0) {
+      return res.status(422).json({
+        success: false,
+        message: "Invalid withdrawal amount"
+      });
+    }
+
+    if (!accountNumber || !bankCode || !fullName) {
+      return res.status(422).json({
+        success: false,
+        message: "Bank account details are required"
+      });
+    }
+
+    const withdrawAmount = Number(amount);
+    const adminUser = await userCollection.findOne({ email: "admin@gmail.com" });
+
+    if (!adminUser) {
+      return res.status(404).json({ success: false, message: "Admin user not found" });
+    }
+
+    let newBalance = adminUser.balance;
+
+    if (withdrawalType === "profit") {
+      const currentBalance = Number(adminUser.balance || 0);
+
+      if (currentBalance < withdrawAmount) {
+        return res.status(422).json({
+          success: false,
+          message: `Insufficient balance. Available: ${currentBalance}, Requested: ${withdrawAmount}`
+        });
+      }
+
+      await userCollection.updateOne(
+        { _id: adminUser._id },
+        { $inc: { balance: -withdrawAmount } }
+      );
+
+      newBalance = currentBalance - withdrawAmount;
+    }
+
+    const withdrawalDoc = {
+      userId: adminUser._id,
+      userEmail: adminUser.email,
+      withdrawalType,
+      isAdminWithdrawal: true,
+      paymentMethod: "admin",
+      amount: withdrawAmount.toString(),
+      amountUSD: withdrawAmount,
+      currency: "USD",
+      accountNumber,
+      bankCode,
+      fullName,
+      bankName: bankName || null,
+      phoneNumber: phoneNumber || null,
+      email: adminUser.email,
+      note: note || "",
+      status: "pending",
+      adminNote: "",
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    const insertResult = await withdrawalCollection.insertOne(withdrawalDoc);
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("withdrawal_status_update", {
+        userId: adminUser._id.toString(),
+        withdrawalId: insertResult.insertedId.toString(),
+        status: "pending",
+        newBalance: newBalance
+      });
+    }
+
+    res.status(201).json({
+      success: true,
+      message: "Admin withdrawal request submitted successfully",
+      withdrawalId: insertResult.insertedId.toString(),
+      withdrawalType,
+      newBalance: withdrawalType === "profit" ? newBalance : adminUser.balance
+    });
+
+  } catch (error) {
+    console.error("Admin withdrawal error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error during admin withdrawal",
+      error: error.message
+    });
+  }
+});
+
+
+module.exports = router;
 
 
 
@@ -667,6 +957,17 @@ router.post("/post", async (req, res) => {
           status: "pending"
         });
 
+        // Emit socket event for real-time update
+        const io = req.app.get("io");
+        if (io) {
+          io.emit("withdrawal_status_update", {
+            userId: userObjectId.toString(),
+            withdrawalId: withdrawalId.toString(),
+            status: "pending",
+            newBalance: currentBalance - withdrawAmount
+          });
+        }
+
         // SEND PENDING EMAIL NOTIFICATION
         try {
           const recipientEmail = user.email; // Account email (already fetched)
@@ -763,6 +1064,17 @@ router.put("/approve/:id", async (req, res) => {
       console.error("Failed to send approval email:", emailErr);
     }
 
+    // Emit socket event for real-time update
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("withdrawal_status_update", {
+        userId: withdrawal.userId.toString(),
+        withdrawalId: withdrawal._id.toString(),
+        status: "approved",
+        newBalance: null // Balance already deducted during request
+      });
+    }
+
     res.status(200).send({
       success: true,
       modifiedCount: result.modifiedCount,
@@ -856,6 +1168,19 @@ router.put("/decline/:id", async (req, res) => {
       console.error("Failed to send decline email:", emailErr);
     }
 
+    // Emit socket event for real-time update
+    const io = req.app.get("io");
+    if (io) {
+      // Fetch updated user balance
+      const updatedUser = await userCollection.findOne({ _id: withdrawal.userId });
+      io.emit("withdrawal_status_update", {
+        userId: withdrawal.userId.toString(),
+        withdrawalId: id,
+        status: "declined",
+        newBalance: updatedUser ? updatedUser.balance : null
+      });
+    }
+
     res.status(200).send({ success: true, message: "Withdrawal declined and user refunded." });
   } catch (error) {
     console.error("Decline Error:", error);
@@ -905,4 +1230,149 @@ router.get("/get/:id", async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
+// GET: Get withdrawal history for a specific user
+// Endpoint: GET /withdraw/user/:userId
+router.get("/user/:userId", async (req, res) => {
+  try {
+    if (!withdrawalCollection) {
+      return res.status(503).json({ message: "Database not ready" });
+    }
+
+    const { userId } = req.params;
+
+    if (!ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: "Invalid user ID format" });
+    }
+
+    const userObjectId = new ObjectId(userId);
+
+    const withdrawals = await withdrawalCollection
+      .find({ userId: userObjectId })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    res.status(200).json(withdrawals);
+  } catch (error) {
+    console.error("User withdrawal fetch error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// POST: Admin withdrawal (Platform Profit or System Turnover)
+// Endpoint: POST /withdraw/admin
+router.post("/admin", async (req, res) => {
+  try {
+    const {
+      withdrawalType,
+      amount,
+      accountNumber,
+      bankCode,
+      fullName,
+      bankName,
+      phoneNumber,
+      note
+    } = req.body;
+
+    if (!withdrawalType || !["profit", "turnover"].includes(withdrawalType)) {
+      return res.status(422).json({
+        success: false,
+        message: "Invalid withdrawalType. Must be 'profit' or 'turnover'"
+      });
+    }
+
+    if (!amount || Number(amount) <= 0) {
+      return res.status(422).json({
+        success: false,
+        message: "Invalid withdrawal amount"
+      });
+    }
+
+    if (!accountNumber || !bankCode || !fullName) {
+      return res.status(422).json({
+        success: false,
+        message: "Bank account details are required"
+      });
+    }
+
+    const withdrawAmount = Number(amount);
+    const adminUser = await userCollection.findOne({ email: "admin@gmail.com" });
+
+    if (!adminUser) {
+      return res.status(404).json({ success: false, message: "Admin user not found" });
+    }
+
+    let newBalance = adminUser.balance;
+
+    if (withdrawalType === "profit") {
+      const currentBalance = Number(adminUser.balance || 0);
+
+      if (currentBalance < withdrawAmount) {
+        return res.status(422).json({
+          success: false,
+          message: `Insufficient balance. Available: ${currentBalance}, Requested: ${withdrawAmount}`
+        });
+      }
+
+      await userCollection.updateOne(
+        { _id: adminUser._id },
+        { $inc: { balance: -withdrawAmount } }
+      );
+
+      newBalance = currentBalance - withdrawAmount;
+    }
+
+    const withdrawalDoc = {
+      userId: adminUser._id,
+      userEmail: adminUser.email,
+      withdrawalType,
+      isAdminWithdrawal: true,
+      paymentMethod: "admin",
+      amount: withdrawAmount.toString(),
+      amountUSD: withdrawAmount,
+      currency: "USD",
+      accountNumber,
+      bankCode,
+      fullName,
+      bankName: bankName || null,
+      phoneNumber: phoneNumber || null,
+      email: adminUser.email,
+      note: note || "",
+      status: "pending",
+      adminNote: "",
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    const insertResult = await withdrawalCollection.insertOne(withdrawalDoc);
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("withdrawal_status_update", {
+        userId: adminUser._id.toString(),
+        withdrawalId: insertResult.insertedId.toString(),
+        status: "pending",
+        newBalance: newBalance
+      });
+    }
+
+    res.status(201).json({
+      success: true,
+      message: "Admin withdrawal request submitted successfully",
+      withdrawalId: insertResult.insertedId.toString(),
+      withdrawalType,
+      newBalance: withdrawalType === "profit" ? newBalance : adminUser.balance
+    });
+
+  } catch (error) {
+    console.error("Admin withdrawal error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error during admin withdrawal",
+      error: error.message
+    });
+  }
+});
+
+
 module.exports = router;

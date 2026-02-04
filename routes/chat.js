@@ -779,18 +779,19 @@ async function run() {
           return res.status(400).json({ error: "userId is required" });
         }
 
-        if (status === "offline") {
-          await presenceCollection.updateOne(
-            { userId },
-            { $set: { lastSeen: new Date(0), status: "offline" } },
-            { upsert: true }
-          );
-        } else {
-          await presenceCollection.updateOne(
-            { userId },
-            { $set: { lastSeen: new Date(), status: "online" } },
-            { upsert: true }
-          );
+        const lastSeen = new Date();
+        const effectiveLastSeen = status === "offline" ? new Date(0) : lastSeen;
+
+        await presenceCollection.updateOne(
+          { userId },
+          { $set: { lastSeen: effectiveLastSeen, status: status } },
+          { upsert: true }
+        );
+
+        // Broadcast status update via global io
+        const io = req.app.get("io");
+        if (io) {
+          io.emit("user_status_update", { userId, status, lastSeen: effectiveLastSeen });
         }
 
         res.json({ success: true });
