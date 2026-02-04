@@ -100,6 +100,7 @@ router.post("/report/create", async (req, res) => {
         message: `⚠️ Order #${orderId.slice(-6).toUpperCase()} has been reported for "${reason}".`,
         type: "report",
         orderId: orderId,
+        productTitle: productName, // ✅ Added
         createdAt: new Date(),
         read: false
       };

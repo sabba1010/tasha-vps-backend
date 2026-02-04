@@ -50,7 +50,7 @@
 
 
 const express = require("express");
-const { MongoClient } = require("mongodb");
+const { MongoClient, ObjectId } = require("mongodb");
 
 const router = express.Router();
 const MONGO_URI = process.env.MONGO_URI;
@@ -114,13 +114,23 @@ router.get("/getall", async (req, res) => {
   try {
     const { userId, role } = req.query; 
     
-    const query = {
-      $or: [
-        { userEmail: userId },
-        { target: "all" },
-        { target: role } 
-      ]
-    };
+    // If no userId provided, it means we want all notifications (e.g. for Admin Dashboard)
+    let query = {};
+    if (userId) {
+      query = {
+        $and: [
+          {
+            $or: [
+              { userEmail: userId },
+              { target: "all" },
+              { target: role },
+              { target: role + "s" }
+            ]
+          },
+          { deletedBy: { $ne: userId } }
+        ]
+      };
+    }
 
     const notifications = await notification.find(query).sort({ createdAt: -1 }).toArray();
     res.json(notifications);
@@ -135,25 +145,84 @@ router.delete("/clear-all/:email", async (req, res) => {
   if (!email) return res.status(400).json({ error: "Email is required" });
 
   try {
-    const result = await notification.deleteMany({ userEmail: email });
-    res.json({ success: true, deletedCount: result.deletedCount });
+    const { role } = req.query;
+    // Instead of deleting, we add the user to 'deletedBy' array
+    // This allows global announcements to stay for others while being hidden for this user
+    const query = {
+      $or: [
+        { userEmail: email },
+        { target: "all" },
+        { target: role },
+        { target: role + "s" }
+      ]
+    };
+
+    const result = await notification.updateMany(
+      query,
+      { $addToSet: { deletedBy: email } }
+    );
+    
+    res.json({ success: true, updatedCount: result.modifiedCount });
   } catch (err) {
+    console.error('Clear All Error:', err);
     res.status(500).json({ error: "Failed to clear notifications" });
   }
 });
 
 // Backend Route Example
 router.post("/mark-read", async (req, res) => {
-  const { email } = req.body;
+  const { email, role } = req.body;
+  if (!email) return res.status(400).json({ error: "Email is required" });
+
   try {
-    // ওই ইমেইলের সব নোটিফিকেশনকে একবারে read: true করে দিন
+    // ১. সরাসরি ইউজারের ইমেইলে পাঠানো নোটিফিকেশনগুলো পুরোনো লজিক অনুযায়ী read: true করি
     await notification.updateMany(
       { userEmail: email, read: false }, 
       { $set: { read: true } }
     );
+
+    // ২. সবার জন্য বা রোল ভিত্তিক অ্যানাউন্সমেন্টগুলোতে ইউজারকে readBy অ্যারেতে অ্যাড করি
+    const announcementQuery = {
+      $and: [
+        {
+          $or: [
+            { target: "all" },
+            { target: role },
+            { target: role + "s" }
+          ]
+        },
+        { readBy: { $ne: email } }
+      ]
+    };
+
+    await notification.updateMany(
+      announcementQuery,
+      { $addToSet: { readBy: email } }
+    );
+
     res.json({ success: true });
   } catch (err) {
+    console.error('Mark Read Error:', err);
     res.status(500).send(err);
+  }
+});
+
+// --- ৪. নোটিফিকেশন ডিলিট করার লজিক ---
+router.delete("/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!id) return res.status(400).json({ error: "ID is required" });
+    
+    const result = await notification.deleteOne({ _id: new ObjectId(id) });
+    
+    if (result.deletedCount === 1) {
+      res.json({ success: true, message: "Notification deleted successfully" });
+    } else {
+      res.status(404).json({ error: "Notification not found" });
+    }
+  } catch (err) {
+    console.error('Delete Notification Error:', err);
+    res.status(500).json({ error: 'Failed to delete notification' });
   }
 });
 

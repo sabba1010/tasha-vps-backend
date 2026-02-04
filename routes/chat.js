@@ -598,15 +598,22 @@ async function run() {
         }
 
         // Create notification for receiver
-        await notificationCollection.insertOne({
-          userEmail: receiverId,
-          type: "chat",
-          from: senderId,
-          message: message || (imageUrl ? "[Image]" : ""),
-          orderId,
-          read: false,
-          createdAt: new Date(),
-        });
+        try {
+          const purchaseDoc = await db.collection("mypurchase").findOne({ _id: new ObjectId(orderId) });
+          await notificationCollection.insertOne({
+            userEmail: receiverId,
+            type: "chat",
+            from: senderId,
+            message: message || (imageUrl ? "[Image]" : ""),
+            orderId,
+            productId: purchaseDoc?.productId || null,
+            productTitle: purchaseDoc?.productName || null,
+            read: false,
+            createdAt: new Date(),
+          });
+        } catch (notifErr) {
+          console.error("Failed to create chat notification record:", notifErr);
+        }
 
         // Real-time emit to receiver (and sender for sync)
         if (io) {
