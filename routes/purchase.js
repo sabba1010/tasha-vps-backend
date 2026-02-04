@@ -33,23 +33,56 @@ let db, cartCollection, purchaseCollection, userCollection, productsCollection, 
         const now = Date.now();
         const pendingOrders = await purchaseCollection.find({ status: "pending" }).toArray();
         
-        const toConfirm = [];
+        let processedCount = 0;
+
         for (const order of pendingOrders) {
           const product = await productsCollection.findOne({ _id: new ObjectId(order.productId) });
+          // Only process manual delivery items that have expired
           if (!product || product.deliveryType !== "manual" || !product.deliveryTime) continue;
           
           const deliveryMs = parseDeliveryTime(product.deliveryTime);
           const expiresAt = new Date(order.purchaseDate).getTime() + deliveryMs;
           
-          if (now >= expiresAt) toConfirm.push(order._id);
+          if (now >= expiresAt) {
+            // Processing Auto-Confirmation
+            const session = client.startSession();
+            try {
+              await session.withTransaction(async () => {
+                const amount = order.price || order.totalPrice || 0;
+
+                // 1. Update Order Status
+                await purchaseCollection.updateOne(
+                  { _id: order._id },
+                  { $set: { status: "completed", autoConfirmed: true, completedAt: new Date() } },
+                  { session }
+                );
+
+                // 2. Update Product Status
+                if (order.productId) {
+                  await productsCollection.updateOne(
+                    { _id: new ObjectId(order.productId) },
+                    { $set: { status: "completed", updatedAt: new Date() } },
+                    { session }
+                  );
+                }
+
+                // 3. Transfer Funds
+                if (order.sellerEmail) {
+                    await userCollection.updateOne({ email: order.sellerEmail }, { $inc: { balance: amount * 0.8 } }, { session });
+                }
+                await userCollection.updateOne({ email: "admin@gmail.com" }, { $inc: { balance: amount * 0.2 } }, { session });
+              });
+              processedCount++;
+            } catch (txErr) {
+              console.error(`❌ [Auto-Confirm] Failed for order ${order._id}:`, txErr.message);
+            } finally {
+              await session.endSession();
+            }
+          }
         }
         
-        if (toConfirm.length > 0) {
-          await purchaseCollection.updateMany(
-            { _id: { $in: toConfirm } },
-            { $set: { status: "completed", autoConfirmed: true, completedAt: new Date() } }
-          );
-          console.log(`✅ [Auto-Confirm] ${toConfirm.length} orders auto-confirmed at ${new Date().toLocaleTimeString()}`);
+        if (processedCount > 0) {
+           console.log(`✅ [Auto-Confirm] ${processedCount} orders processed successfully at ${new Date().toLocaleTimeString()}`);
         }
       } catch (err) {
         console.error('❌ [Auto-Confirm Job] Error:', err.message);
@@ -363,13 +396,24 @@ router.patch("/update-status/:id", async (req, res) => {
       });
     }
 
-    // 🔒 RESTRICTION: Only Admin can cancel orders
+    // 🔒 RESTRICTION: Check permissions based on status change
     if (status === "cancelled") {
       const { role } = req.body;
       if (role !== "admin") {
         return res.status(403).json({ 
           success: false, 
           message: "Permission denied. Only Admins can cancel orders." 
+        });
+      }
+    }
+
+    // Allow Admins, Buyers, and Sellers to mark as completed
+    if (status === "completed") {
+      const { role } = req.body;
+      if (!["admin", "buyer", "seller"].includes(role)) {
+        return res.status(403).json({ 
+          success: false, 
+          message: "Permission denied. Invalid role for completing order." 
         });
       }
     }
