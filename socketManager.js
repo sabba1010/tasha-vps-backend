@@ -35,13 +35,14 @@ module.exports = (io) => {
 
             try {
                 if (presenceCollection) {
+                    const now = new Date();
                     await presenceCollection.updateOne(
                         { userId },
-                        { $set: { lastSeen: new Date(), status: "online", socketId: socket.id } },
+                        { $set: { lastSeen: now, status: "online", socketId: socket.id } },
                         { upsert: true }
                     );
-                    // Broadcast status update
-                    io.emit("user_status_update", { userId, status: "online", lastSeen: new Date() });
+                    // Broadcast status update to EVERYONE
+                    io.emit("user_status_update", { userId, status: "online", lastSeen: now.toISOString() });
                 }
             } catch (e) {
                 console.error("Error updating status:", e);
@@ -50,21 +51,17 @@ module.exports = (io) => {
 
         socket.on("disconnect", async () => {
             console.log("User Disconnected", socket.id);
-            // Ideally we should map socket.id to userId to set them offline
-            // For simplicity/performance, we might rely on the client sending an offline signal 
-            // or just letting the 'lastSeen' timestamp age. 
-            // But let's try to update if we can find them.
             try {
                 if (presenceCollection) {
-                    // Find user with this socketId and set to offline
-                    // Note: This requires us to save socketId on connect, which we added above.
                     const user = await presenceCollection.findOne({ socketId: socket.id });
                     if (user) {
+                        const now = new Date();
                         await presenceCollection.updateOne(
                             { _id: user._id },
-                            { $set: { status: "offline", lastSeen: new Date() } }
+                            { $set: { status: "offline", lastSeen: now } }
                         );
-                        io.emit("user_status_update", { userId: user.userId, status: "offline", lastSeen: new Date() });
+                        // Broadcast offline status to EVERYONE
+                        io.emit("user_status_update", { userId: user.userId, status: "offline", lastSeen: now.toISOString() });
                     }
                 }
             } catch (e) {

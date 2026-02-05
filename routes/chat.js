@@ -779,8 +779,8 @@ async function run() {
           return res.status(400).json({ error: "userId is required" });
         }
 
-        const lastSeen = new Date();
-        const effectiveLastSeen = status === "offline" ? new Date(0) : lastSeen;
+        const now = new Date();
+        const effectiveLastSeen = status === "offline" ? new Date(0) : now;
 
         await presenceCollection.updateOne(
           { userId },
@@ -791,7 +791,7 @@ async function run() {
         // Broadcast status update via global io
         const io = req.app.get("io");
         if (io) {
-          io.emit("user_status_update", { userId, status, lastSeen: effectiveLastSeen });
+          io.emit("user_status_update", { userId, status, lastSeen: effectiveLastSeen.toISOString() });
         }
 
         res.json({ success: true });
