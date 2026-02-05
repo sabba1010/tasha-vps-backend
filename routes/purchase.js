@@ -37,10 +37,11 @@ let db, cartCollection, purchaseCollection, userCollection, productsCollection, 
 
         for (const order of pendingOrders) {
           const product = await productsCollection.findOne({ _id: new ObjectId(order.productId) });
-          // Only process manual delivery items that have expired
-          if (!product || product.deliveryType !== "manual" || !product.deliveryTime) continue;
+          // If product not found, we can't determine expiry, but could default to purchase date + 4h.
+          // For now, only process if product exists to be safe.
+          if (!product) continue;
           
-          const deliveryMs = parseDeliveryTime(product.deliveryTime);
+          const deliveryMs = parseDeliveryTime(product.deliveryTime || order.deliveryTime);
           const expiresAt = new Date(order.purchaseDate).getTime() + deliveryMs;
           
           if (now >= expiresAt) {
@@ -491,13 +492,8 @@ router.get("/auto-confirm-check", async (req, res) => {
 
       if (!product) continue;
 
-      // Only auto-confirm if manual delivery with deliveryTime
-      if (product.deliveryType !== "manual" || !product.deliveryTime) {
-        continue;
-      }
-
-      // Parse deliveryTime
-      const deliveryMs = parseDeliveryTime(product.deliveryTime);
+      // Parse deliveryTime (defaults to 4h if missing)
+      const deliveryMs = parseDeliveryTime(product.deliveryTime || order.deliveryTime);
       const purchaseTime = new Date(order.purchaseDate).getTime();
       const expiresAt = purchaseTime + deliveryMs;
 
