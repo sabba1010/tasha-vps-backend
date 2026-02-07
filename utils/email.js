@@ -80,7 +80,7 @@ const getWithdrawalSuccessTemplate = ({ name, amountUSD, amountNGN, rate, transa
     <body>
         <div class="container">
             <div class="header">
-                <img src="https://acctempire.com/logo.png" alt="AcctEmpire" class="logo" onerror="this.style.display='none'">
+                <img src="https://i.ibb.co.com/dwG27jtN/headerlogo.png" alt="AcctEmpire" class="logo" onerror="this.style.display='none'">
                 <div style="font-size: 28px; font-weight: 800; color: #ff4d00; letter-spacing: -1px;">AcctEmpire</div>
             </div>
             <div class="content">
