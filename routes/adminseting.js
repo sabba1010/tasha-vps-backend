@@ -27,8 +27,8 @@ router.get("/financial-metrics", async (req, res) => {
             success: true,
             metrics: {
                 currentSystemTurnover: stats ? stats.totalTurnover : 0,
-                currentWalletPlatformProfit: adminUser ? adminUser.balance : 0,
-                adminSalesBalance: adminUser ? (adminUser.adminSalesBalance || 0) : 0,
+                currentWalletPlatformProfit: adminUser ? (adminUser.platformProfit || 0) : 0,
+                adminSalesBalance: adminUser ? (adminUser.balance || 0) : 0,
                 lifetimePlatformProfit: stats ? stats.lifetimePlatformProfit : 0,
                 totalWalletBalanceHeldByUsers: stats ? stats.totalUserBalance : 0
             }
