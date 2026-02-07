@@ -18,6 +18,8 @@ async function connectDB() {
 
 connectDB();
 
+const activeUsersSockets = new Map();
+
 module.exports = (io) => {
     io.on("connection", (socket) => {
         console.log(`User Connected: ${socket.id}`);
@@ -31,14 +33,20 @@ module.exports = (io) => {
         // Handle user online status
         socket.on("user_connected", async (userId) => {
             if (!userId) return;
-            socket.join(userId); // Join room named after userId for personal notifications
+            socket.userId = userId;
+            socket.join(userId);
+
+            if (!activeUsersSockets.has(userId)) {
+                activeUsersSockets.set(userId, new Set());
+            }
+            activeUsersSockets.get(userId).add(socket.id);
 
             try {
                 if (presenceCollection) {
                     const now = new Date();
                     await presenceCollection.updateOne(
                         { userId },
-                        { $set: { lastSeen: now, status: "online", socketId: socket.id } },
+                        { $set: { lastSeen: now, status: "online" } },
                         { upsert: true }
                     );
                     // Broadcast status update to EVERYONE
@@ -50,22 +58,29 @@ module.exports = (io) => {
         });
 
         socket.on("disconnect", async () => {
-            console.log("User Disconnected", socket.id);
-            try {
-                if (presenceCollection) {
-                    const user = await presenceCollection.findOne({ socketId: socket.id });
-                    if (user) {
-                        const now = new Date();
-                        await presenceCollection.updateOne(
-                            { _id: user._id },
-                            { $set: { status: "offline", lastSeen: now } }
-                        );
-                        // Broadcast offline status to EVERYONE
-                        io.emit("user_status_update", { userId: user.userId, status: "offline", lastSeen: now.toISOString() });
+            const userId = socket.userId;
+            console.log("User Disconnected", socket.id, "userId:", userId);
+
+            if (userId && activeUsersSockets.has(userId)) {
+                activeUsersSockets.get(userId).delete(socket.id);
+
+                if (activeUsersSockets.get(userId).size === 0) {
+                    activeUsersSockets.delete(userId);
+
+                    try {
+                        if (presenceCollection) {
+                            const now = new Date();
+                            await presenceCollection.updateOne(
+                                { userId },
+                                { $set: { status: "offline", lastSeen: now } }
+                            );
+                            // Broadcast offline status to EVERYONE only when ALL tabs are closed
+                            io.emit("user_status_update", { userId, status: "offline", lastSeen: now.toISOString() });
+                        }
+                    } catch (e) {
+                        console.error("Error setting offline:", e);
                     }
                 }
-            } catch (e) {
-                console.error("Error setting offline:", e);
             }
         });
     });

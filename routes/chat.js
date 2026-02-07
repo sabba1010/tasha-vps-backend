@@ -818,8 +818,8 @@ async function run() {
         const lastSeenDate = new Date(doc.lastSeen);
         const diffMs = Date.now() - lastSeenDate.getTime();
 
-        // Consider online if active in the last 2 minutes
-        const online = diffMs < 120000;
+        // Online if status is 'online' AND active in the last 5 minutes (safety fallback)
+        const online = doc.status === "online" && diffMs < 300000;
 
         let lastSeenText = "";
 
