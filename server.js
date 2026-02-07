@@ -94,6 +94,7 @@ app.use("/withdraw", withdrawRoute);
 app.use("/purchase", purchaseRoute);
 app.use("/referral", refarelRoute);
 app.use("/rating", ratingRoute);
+app.use("/api/admin", adminsetingRoute);
 app.use("/reputation", reputationRoute);
 
 // ---------------------------------------

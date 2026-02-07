@@ -1,6 +1,7 @@
 const express = require("express");
 const axios = require("axios");
 const { MongoClient } = require("mongodb");
+const { updateStats } = require("./utils/stats");
 
 const router = express.Router();
 
@@ -115,6 +116,7 @@ router.get("/verify", async (req, res) => {
       { email: payment.customerEmail },
       { $inc: { balance: Number(creditAmount.toFixed(2)) } }
     );
+    await updateStats({ totalUserBalance: Number(creditAmount.toFixed(2)) });
 
     res.json({ success: true });
   } catch (err) {

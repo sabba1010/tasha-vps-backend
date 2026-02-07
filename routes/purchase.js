@@ -1,6 +1,7 @@
 const express = require("express");
 const { MongoClient, ObjectId } = require("mongodb");
 const cron = require("node-cron");
+const { updateStats } = require("../utils/stats");
 
 const router = express.Router();
 
@@ -11,7 +12,7 @@ const MONGO_URI = process.env.MONGO_URI;
 // ===============================
 const client = new MongoClient(MONGO_URI);
 
-let db, cartCollection, purchaseCollection, userCollection, productsCollection, reportCollection;
+let db, cartCollection, purchaseCollection, userCollection, productsCollection, reportCollection, statsCollection;
 
 (async () => {
   try {
@@ -22,6 +23,7 @@ let db, cartCollection, purchaseCollection, userCollection, productsCollection, 
     userCollection = db.collection("userCollection");
     productsCollection = db.collection("products");
     reportCollection = db.collection("reports");
+    statsCollection = db.collection("systemStats");
     console.log("✅ MongoDB Connected");
     
     // ===============================
@@ -33,6 +35,10 @@ let db, cartCollection, purchaseCollection, userCollection, productsCollection, 
         const now = Date.now();
         const pendingOrders = await purchaseCollection.find({ status: "pending" }).toArray();
         
+        if (pendingOrders.length > 0) {
+          console.log(`[Auto-Confirm Job] Checking ${pendingOrders.length} pending orders...`);
+        }
+
         let processedCount = 0;
 
         for (const order of pendingOrders) {
@@ -41,11 +47,12 @@ let db, cartCollection, purchaseCollection, userCollection, productsCollection, 
           // For now, only process if product exists to be safe.
           if (!product) continue;
           
-          const deliveryMs = parseDeliveryTime(product.deliveryTime || order.deliveryTime);
+          const deliveryMs = parseDeliveryTime(order.deliveryTime || product.deliveryTime);
           const expiresAt = new Date(order.purchaseDate).getTime() + deliveryMs;
           
           if (now >= expiresAt) {
             // Processing Auto-Confirmation
+            console.log(`[Auto-Confirm Job] Order ${order._id} expired. Auto-confirming...`);
             const session = client.startSession();
             try {
               await session.withTransaction(async () => {
@@ -68,14 +75,37 @@ let db, cartCollection, purchaseCollection, userCollection, productsCollection, 
                 }
 
                 // 3. Transfer Funds
-                if (order.sellerEmail) {
-                    await userCollection.updateOne({ email: order.sellerEmail }, { $inc: { balance: amount * 0.8 } }, { session });
+                const platformFee = amount * 0.2;
+                const sellerShare = amount * 0.8;
+
+                if (order.sellerEmail === "admin@gmail.com") {
+                   // Admin sold: Balance gets sales (80%), Platform Profit gets fee (20%)
+                   // NOTE: We don't use adminSalesBalance anymore as 'balance' is now the withdrawable sales wallet.
+                   await userCollection.updateOne(
+                       { email: "admin@gmail.com" }, 
+                       { $inc: { balance: sellerShare, platformProfit: platformFee } }, 
+                       { session }
+                   );
+                } else {
+                   if (order.sellerEmail) {
+                       await userCollection.updateOne({ email: order.sellerEmail }, { $inc: { balance: sellerShare } }, { session });
+                   }
+                   // Standard sale: Fee goes to platformProfit (not balance)
+                   await userCollection.updateOne({ email: "admin@gmail.com" }, { $inc: { platformProfit: platformFee } }, { session });
                 }
-                await userCollection.updateOne({ email: "admin@gmail.com" }, { $inc: { balance: amount * 0.2 } }, { session });
+
+                // 4. Update Global Stats
+                // 4. Update Global Stats
+                await updateStatsLocal({
+                   totalTurnover: amount,
+                   lifetimePlatformProfit: platformFee,
+                   totalUserBalance: amount
+                }, session);
               });
               processedCount++;
+              console.log(`✅ [Auto-Confirm Job] Order ${order._id} confirmed successfully.`);
             } catch (txErr) {
-              console.error(`❌ [Auto-Confirm] Failed for order ${order._id}:`, txErr.message);
+              console.error(`❌ [Auto-Confirm Job] Failed for order ${order._id}:`, txErr.message);
             } finally {
               await session.endSession();
             }
@@ -83,7 +113,7 @@ let db, cartCollection, purchaseCollection, userCollection, productsCollection, 
         }
         
         if (processedCount > 0) {
-           console.log(`✅ [Auto-Confirm] ${processedCount} orders processed successfully at ${new Date().toLocaleTimeString()}`);
+           console.log(`✅ [Auto-Confirm Job] ${processedCount} orders processed successfully at ${new Date().toLocaleTimeString()}`);
         }
       } catch (err) {
         console.error('❌ [Auto-Confirm Job] Error:', err.message);
@@ -232,20 +262,33 @@ router.patch("/report/refund/:id", async (req, res) => {
       const order = await purchaseCollection.findOne({ _id: new ObjectId(report.orderId) }, { session });
       if (!order) throw new Error("Order not found");
 
-      // বায়ারকে টাকা ফেরত
+      // Transfer funds (Refund)
       await userCollection.updateOne(
         { email: order.buyerEmail },
         { $inc: { balance: Number(order.price) } },
         { session }
       );
 
-      // প্রোডাক্ট আবার active করা
-      if (order.productId) {
-        await productsCollection.updateOne(
-          { _id: new ObjectId(order.productId) },
-          { $set: { status: "active" } },
-          { session }
-        );
+      // Update Stats
+      if (order.status === "completed") {
+        const platformFee = Number(order.price) * 0.2;
+        const sellerShare = Number(order.price) * 0.8;
+
+        if (order.sellerEmail === "admin@gmail.com") {
+          await userCollection.updateOne({ email: "admin@gmail.com" }, { $inc: { balance: -platformFee, adminSalesBalance: -sellerShare } }, { session });
+        } else {
+          await userCollection.updateOne({ email: order.sellerEmail }, { $inc: { balance: -sellerShare } }, { session });
+          await userCollection.updateOne({ email: "admin@gmail.com" }, { $inc: { balance: -platformFee } }, { session });
+        }
+
+        await updateStatsLocal({
+          totalTurnover: -Number(order.price),
+          lifetimePlatformProfit: -platformFee,
+          totalUserBalance: 0
+        }, session);
+      } else {
+        // Was pending, money was in escrow (deducted from buyer but not given to seller)
+        await updateStatsLocal({ totalUserBalance: Number(order.price) }, session);
       }
 
       await purchaseCollection.updateOne({ _id: order._id }, { $set: { status: "refunded" } }, { session });
@@ -259,6 +302,7 @@ router.patch("/report/refund/:id", async (req, res) => {
     await session.endSession();
   }
 });
+
 
 // =======================================================
 // 🚀 PURCHASE SECTION (অন্যান্য পারচেজ রাউট)
@@ -278,6 +322,7 @@ router.post("/post", async (req, res) => {
     if (Number(buyer.balance || 0) < totalPrice) return res.status(400).json({ success: false, message: "Insufficient balance" });
 
     await userCollection.updateOne({ email: buyerEmail }, { $inc: { balance: -totalPrice } });
+    await updateStats({ totalUserBalance: -totalPrice });
 
     const purchaseDocs = cartItems.map((item) => ({
       buyerId: buyer._id,
@@ -323,6 +368,7 @@ router.post("/single-purchase", async (req, res) => {
     }
     
     await userCollection.updateOne({ email: buyerEmail }, { $inc: { balance: -amount } });
+    await updateStats({ totalUserBalance: -amount });
 
     const purchaseData = {
       buyerId: buyer._id,
@@ -363,7 +409,11 @@ router.get("/getall", async (req, res) => {
 router.patch("/update-status/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, sellerEmail } = req.body;
+    const { status, email, role } = req.body; // Use 'email' and 'role' for authorization
+
+    if (!status) {
+      return res.status(400).json({ success: false, message: "Status is required" });
+    }
 
     // Validate status value
     const validStatuses = ["pending", "completed", "cancelled", "refunded"];
@@ -374,14 +424,29 @@ router.patch("/update-status/:id", async (req, res) => {
       });
     }
 
-    // Validate status transitions
+    // Validate ID
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: "Invalid order ID" });
+    }
+
+    // Fetch purchase record
     const purchase = await purchaseCollection.findOne({ _id: new ObjectId(id) });
-    
     if (!purchase) {
       return res.status(404).json({ success: false, message: "Purchase not found" });
     }
 
-    // Can't modify completed orders (except to refund)
+    // 🔒 AUTHORIZATION: Check if user has permission to modify this order
+    const isOwner = (role === "buyer" && email === purchase.buyerEmail) || 
+                    (role === "seller" && email === purchase.sellerEmail);
+    const isAdmin = role === "admin";
+
+    if (!isAdmin && !isOwner) {
+      console.warn(`[Update Status] Unauthorized attempt by ${email} (${role}) for order ${id}`);
+      return res.status(403).json({ success: false, message: "Permission denied. You are not authorized for this order." });
+    }
+
+    // Status cycle validation
+    // Can't modify completed orders (except to refund by admin/buyer?)
     if (purchase.status === "completed" && status.toLowerCase() !== "refunded") {
       return res.status(400).json({ 
         success: false, 
@@ -397,65 +462,81 @@ router.patch("/update-status/:id", async (req, res) => {
       });
     }
 
-    // 🔒 RESTRICTION: Check permissions based on status change
-    if (status === "cancelled") {
-      const { role } = req.body;
-      if (role !== "admin") {
+    // 🔒 RESTRICTION: Only Admin can cancel or refund
+    if (["cancelled", "refunded"].includes(status.toLowerCase())) {
+      if (!isAdmin) {
         return res.status(403).json({ 
           success: false, 
-          message: "Permission denied. Only Admins can cancel orders." 
+          message: `Permission denied. Only Admins can set status to ${status}.` 
         });
       }
     }
 
-    // Allow Admins, Buyers, and Sellers to mark as completed
-    if (status === "completed") {
-      const { role } = req.body;
-      if (!["admin", "buyer", "seller"].includes(role)) {
-        return res.status(403).json({ 
-          success: false, 
-          message: "Permission denied. Invalid role for completing order." 
-        });
-      }
+    // Only progress to Completion
+    if (status.toLowerCase() !== "completed") {
+      await purchaseCollection.updateOne({ _id: new ObjectId(id) }, { $set: { status: status.toLowerCase() } });
+      return res.json({ success: true, message: `Status updated to ${status}` });
     }
 
-    if (status !== "completed") {
-      await purchaseCollection.updateOne({ _id: new ObjectId(id) }, { $set: { status } });
-      return res.json({ success: true, message: "Status updated" });
-    }
-
+    // HANDLE COMPLETION (Transfer funds)
     const session = client.startSession();
     try {
       await session.withTransaction(async () => {
-        const purchase = await purchaseCollection.findOne({ _id: new ObjectId(id) }, { session });
-        const amount = purchase.price || purchase.totalPrice || 0;
-        
-        await purchaseCollection.updateOne({ _id: new ObjectId(id) }, { $set: { status: "completed" } }, { session });
+        // Re-fetch inside transaction for safety
+        const pInside = await purchaseCollection.findOne({ _id: new ObjectId(id) }, { session });
+        if (pInside.status === "completed") return; // Already done
 
-        // Update the product document to reflect completion so frontend shows 'Completed'
-        try {
-          const prodId = purchase.productId ? new ObjectId(purchase.productId) : null;
-          if (prodId) {
-            await productsCollection.updateOne(
-              { _id: prodId },
-              { $set: { status: "completed", updatedAt: new Date() } },
-              { session }
-            );
-          }
-        } catch (err) {
-          // If product update fails, continue but log the error
-          console.error('Failed to update product status after purchase completion:', err);
+        const amount = pInside.price || pInside.totalPrice || 0;
+        const sellerEmail = pInside.sellerEmail;
+        
+        await purchaseCollection.updateOne({ _id: new ObjectId(id) }, { $set: { status: "completed", completedAt: new Date() } }, { session });
+
+        // Update product status
+        if (pInside.productId) {
+          await productsCollection.updateOne(
+            { _id: new ObjectId(pInside.productId) },
+            { $set: { status: "completed", updatedAt: new Date() } },
+            { session }
+          );
         }
 
-        await userCollection.updateOne({ email: sellerEmail }, { $inc: { balance: amount * 0.8 } }, { session });
-        await userCollection.updateOne({ email: "admin@gmail.com" }, { $inc: { balance: amount * 0.2 } }, { session });
+        const platformFee = amount * 0.2;
+        const sellerShare = amount * 0.8;
+
+        if (sellerEmail === "admin@gmail.com") {
+          // Admin sold: Balance gets sales (80%), Platform Profit gets fee (20%)
+          await userCollection.updateOne(
+              { email: "admin@gmail.com" }, 
+              { $inc: { balance: sellerShare, platformProfit: platformFee } }, 
+              { session }
+          );
+        } else {
+          if (sellerEmail) {
+            await userCollection.updateOne({ email: sellerEmail }, { $inc: { balance: sellerShare } }, { session });
+          }
+           // Standard sale: Fee goes to platformProfit
+          await userCollection.updateOne({ email: "admin@gmail.com" }, { $inc: { platformProfit: platformFee } }, { session });
+        }
+
+        // Update stats
+        await updateStatsLocal({
+          totalTurnover: amount,
+          lifetimePlatformProfit: platformFee,
+          totalUserBalance: amount
+        }, session);
       });
+
+      console.log(`[Update Status] Order ${id} completed manually by ${email} (${role}). Funds transferred to ${purchase.sellerEmail}`);
       res.json({ success: true, message: "Order completed & commission shared" });
+    } catch (txErr) {
+      console.error(`[Update Status] Transaction failed for order ${id}:`, txErr.message);
+      res.status(500).json({ success: false, message: "Failed to complete transaction" });
     } finally {
       await session.endSession();
     }
   } catch (err) {
-    res.status(500).json({ success: false, message: "Error" });
+    console.error("[Update Status] Error:", err.message);
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -521,14 +602,15 @@ router.get("/auto-confirm-check", async (req, res) => {
   }
 });
 
+async function updateStatsLocal(updates, session) {
+  const updateObj = { $inc: {}, $set: { updatedAt: new Date() } };
+  for (const [key, value] of Object.entries(updates)) {
+      updateObj.$inc[key] = value;
+  }
+  await statsCollection.updateOne({ _id: "global" }, updateObj, { session });
+}
+
 module.exports = router;
-
-
-// const express = require("express");
-// const { MongoClient, ObjectId } = require("mongodb");
-
-// const router = express.Router();
-
 // const MONGO_URI = process.env.MONGO_URI;
 
 // // ===============================
