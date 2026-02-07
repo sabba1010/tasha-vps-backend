@@ -279,9 +279,73 @@ const getWithdrawalPendingTemplate = ({ name, amountUSD, transactionId }) => {
     `;
 };
 
+/**
+ * Get the generic notification email template.
+ * @param {Object} data - Notification details
+ * @param {string} data.name - User's name
+ * @param {string} data.title - Notification title
+ * @param {string} data.message - Notification message
+ * @param {string} [data.link] - Optional link for more details
+ * @returns {string} - HTML email template
+ */
+const getNotificationTemplate = ({ name, title, message, link }) => {
+    return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>${title}</title>
+        <style>
+            body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #0c0c0c; color: #ffffff; }
+            .container { max-width: 600px; margin: 20px auto; background-color: #141414; border-radius: 12px; overflow: hidden; border: 1px solid #222; }
+            .header { padding: 40px 20px; text-align: center; background: linear-gradient(135deg, #1a1a1a 0%, #0c0c0c 100%); border-bottom: 1px solid #222; }
+            .content { padding: 40px 30px; }
+            h1 { color: #ffffff; font-size: 24px; margin: 0 0 10px; font-weight: 700; }
+            p { color: #a0a0a0; font-size: 16px; line-height: 1.6; margin: 0 0 20px; }
+            .notification-box { background-color: #1e1e1e; border-radius: 8px; padding: 25px; margin: 30px 0; border: 1px solid #333; }
+            .notification-title { font-size: 16px; color: #ffffff; margin-bottom: 10px; font-weight: 600; }
+            .notification-message { color: #888; font-size: 15px; }
+            .btn-container { text-align: center; margin-top: 35px; }
+            .btn { background-color: #ff4d00; color: #ffffff; padding: 14px 35px; text-decoration: none; font-weight: 700; border-radius: 8px; display: inline-block; transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(255, 77, 0, 0.3); }
+            .footer { padding: 30px; text-align: center; font-size: 13px; color: #555; background-color: #0c0c0c; border-top: 1px solid #222; }
+            .footer a { color: #ff4d00; text-decoration: none; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <div style="font-size: 28px; font-weight: 800; color: #ff4d00; letter-spacing: -1px;">AcctEmpire</div>
+            </div>
+            <div class="content">
+                <h1>Hi ${name},</h1>
+                <p>You have a new update regarding your account.</p>
+                
+                <div class="notification-box">
+                    <div class="notification-title">${title}</div>
+                    <div class="notification-message">${message}</div>
+                </div>
+
+                ${link ? `
+                <div class="btn-container">
+                    <a href="${link}" class="btn">View Update</a>
+                </div>
+                ` : ''}
+            </div>
+            <div class="footer">
+                <p>This is an automatically generated email. Please do not reply.</p>
+                <p>If you face any issues, please contact us at <a href="mailto:help@acctempire.com">help@acctempire.com</a></p>
+                <p>&copy; ${new Date().getFullYear()} AcctEmpire Team</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    `;
+};
+
 module.exports = {
     sendEmail,
     getWithdrawalSuccessTemplate,
     getWithdrawalDeclineTemplate,
     getWithdrawalPendingTemplate,
+    getNotificationTemplate,
 };

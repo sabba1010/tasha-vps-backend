@@ -506,6 +506,7 @@ const { MongoClient, ObjectId } = require("mongodb");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const { sendNotification } = require("../utils/notification");
 
 const router = express.Router();
 
@@ -597,52 +598,24 @@ async function run() {
           io.emit("user_status_update", { userId: senderId, status: "online", lastSeen: new Date() });
         }
 
-        // Create notification for receiver
+        // Send notification and email
         try {
           const purchaseDoc = await db.collection("mypurchase").findOne({ _id: new ObjectId(orderId) });
-          await notificationCollection.insertOne({
+          await sendNotification(req.app, {
             userEmail: receiverId,
+            title: `New message for Order #${orderId.slice(-6)}`,
+            message: message || (imageUrl ? "[Image]" : "Sent you a message."),
             type: "chat",
-            from: senderId,
-            message: message || (imageUrl ? "[Image]" : ""),
-            orderId,
-            productId: purchaseDoc?.productId || null,
-            productTitle: purchaseDoc?.productName || null,
-            read: false,
-            createdAt: new Date(),
+            relatedId: orderId,
+            link: `https://acctempire.com/orders/${orderId}`
           });
         } catch (notifErr) {
-          console.error("Failed to create chat notification record:", notifErr);
+          console.error("Failed to send chat notification:", notifErr);
         }
 
-        // Real-time emit to receiver (and sender for sync)
+        // Real-time emit to chat window
         if (io) {
-          // Emit message to room (orderId) or personal room (receiverId)
-          // Ideally chat is persisted in 'orderId' room if both are joined, 
-          // OR we send to specific user rooms. 
-          // Let's send to both sender and receiver personal rooms or the order room.
-          // Assuming frontend joins 'orderId' room or 'receiverId' room.
-          // Let's emit to the Order room context if they are chatting there.
           io.to(orderId).emit("receive_message", result.insertedId ? { ...newMessage, _id: result.insertedId } : newMessage);
-
-          // Also emit notification update to receiver
-          io.to(receiverId).emit("notification_update", {
-            type: 'chat',
-            orderId,
-            count: 1 // Increment logic should be handled by client or we send total unread
-          });
-
-          // Let's actually calculate total unread for this order for the receiver to be precise
-          const unreadCount = await notificationCollection.countDocuments({
-            userEmail: receiverId.toString(),
-            orderId: orderId.toString(),
-            read: false,
-            type: 'chat'
-          });
-          io.to(receiverId).emit("unread_count_update", {
-            orderId,
-            count: unreadCount
-          });
         }
 
         res.status(201).json({

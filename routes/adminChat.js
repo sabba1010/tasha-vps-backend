@@ -22,6 +22,8 @@ async function initDB() {
 
 initDB();
 
+const { sendNotification } = require("../utils/notification");
+
 /* =========================
    SEND MESSAGE (Universal)
 ========================= */
@@ -50,28 +52,13 @@ router.post("/send", async (req, res) => {
 
     // If admin is sending, notify the user
     if (senderEmail === "admin@gmail.com") {
-      try {
-        const notif = {
-          userEmail: finalReceiver,
-          title: "New message from admin",
-          message: "You have a new support message from administration.",
-          type: "admin_chat",
-          createdAt: new Date(),
-          read: false
-        };
-        const result = await notifiCollection.insertOne(notif);
-
-        const io = req.app.get("io");
-        if (io) {
-          // Emit to user's room
-          io.to(finalReceiver).emit("new_notification", {
-            ...notif,
-            _id: result.insertedId
-          });
-        }
-      } catch (err) {
-        console.error("Admin notification error:", err);
-      }
+      await sendNotification(req.app, {
+        userEmail: finalReceiver,
+        title: "New message from admin",
+        message: "You have a new support message from administration.",
+        type: "admin_chat",
+        link: "https://acctempire.com/seller-chat"
+      });
     }
 
     res.json({ success: true, data: doc });

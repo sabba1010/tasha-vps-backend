@@ -2,6 +2,7 @@ const express = require("express");
 const { MongoClient, ObjectId } = require("mongodb");
 const { processKorapayPayout, processFlutterwavePayout } = require("../utils/payout");
 const { sendEmail, getWithdrawalSuccessTemplate, getWithdrawalDeclineTemplate, getWithdrawalPendingTemplate } = require("../utils/email");
+const { sendNotification } = require("../utils/notification");
 const { updateStats } = require("../utils/stats");
 
 const router = express.Router();
@@ -328,45 +329,16 @@ router.put("/decline/:id", async (req, res) => {
       console.error('Refund error:', e);
     }
 
-    // Create a notification for the user explaining the decline
-    try {
-      if (notificationCollection) {
-        await notificationCollection.insertOne({
-          userEmail: withdrawal.userEmail || "", // Always use account email
-          title: "Withdrawal Declined",
-          message: reason || "Your withdrawal request was declined.",
-          type: "withdrawal",
-          relatedId: id,
-          read: false,
-          createdAt: new Date(),
-        });
-      }
-    } catch (e) {
-      console.error('Notification insert error:', e);
-    }
-
-    // SEND EMAIL NOTIFICATION
-    try {
-      const recipientEmail = withdrawal.userEmail;
-      if (recipientEmail) {
-        // Fetch the actual user to get the logged-in name
-        const userDoc = await userCollection.findOne({ _id: new ObjectId(withdrawal.userId) });
-
-        const emailHtml = getWithdrawalDeclineTemplate({
-          name: (userDoc && userDoc.name) ? userDoc.name : (withdrawal.fullName || "User"),
-          amountUSD: withdrawal.amountUSD || withdrawal.amount,
-          reason: reason || "Your withdrawal request was declined.",
-          transactionId: id
-        });
-        await sendEmail({
-          to: recipientEmail,
-          subject: "Withdrawal Request Declined",
-          html: emailHtml,
-        });
-      }
-    } catch (emailErr) {
-      console.error("Failed to send decline email:", emailErr);
-    }
+    // Send notification and email for decline
+    const userDoc = await userCollection.findOne({ _id: new ObjectId(withdrawal.userId) });
+    await sendNotification(req.app, {
+      userEmail: withdrawal.userEmail || "",
+      title: "Withdrawal Declined",
+      message: reason || "Your withdrawal request was declined.",
+      type: "withdrawal",
+      relatedId: id,
+      link: "https://acctempire.com/wallet?tab=withdraw"
+    });
 
     // Emit socket event for real-time update
     const io = req.app.get("io");

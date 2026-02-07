@@ -2,6 +2,7 @@ const express = require("express");
 const { MongoClient, ObjectId } = require("mongodb");
 const cron = require("node-cron");
 const { updateStats } = require("../utils/stats");
+const { sendNotification } = require("../utils/notification");
 
 const router = express.Router();
 
@@ -157,23 +158,14 @@ router.post("/report/create", async (req, res) => {
 
     // 🔔 Notify Seller
     try {
-      const io = req.app.get("io");
-      const notificationData = {
+      await sendNotification(req.app, {
         userEmail: sellerEmail,
         title: "Order Reported",
         message: `⚠️ Order #${orderId.slice(-6).toUpperCase()} has been reported for "${reason}".`,
         type: "report",
-        orderId: orderId,
-        productTitle: productName, // ✅ Added
-        createdAt: new Date(),
-        read: false
-      };
-
-      await db.collection("notifiCollection").insertOne(notificationData);
-
-      if (io) {
-        io.to(sellerEmail).emit("new_notification", notificationData);
-      }
+        relatedId: orderId,
+        link: `https://acctempire.com/seller-orders`
+      });
     } catch (notifErr) {
       console.error("Failed to send notification for report:", notifErr);
     }
@@ -337,7 +329,28 @@ router.post("/post", async (req, res) => {
       deliveryTime: item.deliveryTime || null,
     }));
 
-    await purchaseCollection.insertMany(purchaseDocs);
+    const result = await purchaseCollection.insertMany(purchaseDocs);
+
+    // Notify Sellers
+    try {
+      // purchaseDocs might not have the generated _ids if not returned by insertMany in some drivers, 
+      // but insertMany returns an object with insertedIds.
+      const insertedIds = result.insertedIds;
+      purchaseDocs.forEach(async (order, index) => {
+        if (order.sellerEmail) {
+          await sendNotification(req.app, {
+            userEmail: order.sellerEmail,
+            title: "New Order Received",
+            message: `You have received a new order for "${order.productName}".`,
+            type: "order",
+            relatedId: insertedIds[index].toString(),
+            link: "https://acctempire.com/seller-orders"
+          });
+        }
+      });
+    } catch (notifErr) {
+      console.error("Failed to notify sellers of new orders:", notifErr);
+    }
 
     const productUpdatePromises = cartItems.map(async (item) => {
       const pId = item.productId ? new ObjectId(item.productId) : new ObjectId(item._id);
@@ -383,7 +396,23 @@ router.post("/single-purchase", async (req, res) => {
       deliveryTime: product.deliveryTime || null,
     };
 
-    await purchaseCollection.insertOne(purchaseData);
+    const result = await purchaseCollection.insertOne(purchaseData);
+    
+    // Notify Seller
+    try {
+      if (purchaseData.sellerEmail) {
+        await sendNotification(req.app, {
+          userEmail: purchaseData.sellerEmail,
+          title: "New Order Received",
+          message: `You have received a new order for "${purchaseData.productName}".`,
+          type: "order",
+          relatedId: result.insertedId.toString(),
+          link: "https://acctempire.com/seller-orders"
+        });
+      }
+    } catch (notifErr) {
+      console.error("Failed to notify seller of new order:", notifErr);
+    }
     await productsCollection.updateOne({ _id: productObjectId }, { $set: { status: "ongoing" } });
 
     res.status(200).json({ success: true, message: "Purchase successful" });
@@ -527,6 +556,32 @@ router.patch("/update-status/:id", async (req, res) => {
       });
 
       console.log(`[Update Status] Order ${id} completed manually by ${email} (${role}). Funds transferred to ${purchase.sellerEmail}`);
+      
+      // Notify both parties
+      try {
+        // Notify Seller
+        await sendNotification(req.app, {
+          userEmail: purchase.sellerEmail,
+          title: "Order Completed",
+          message: `Order #${id.slice(-6).toUpperCase()} for "${purchase.productName}" has been marked as completed. Funds added to your balance.`,
+          type: "order",
+          relatedId: id,
+          link: "https://acctempire.com/seller-orders"
+        });
+
+        // Notify Buyer
+        await sendNotification(req.app, {
+          userEmail: purchase.buyerEmail,
+          title: "Order Completed",
+          message: `Your order #${id.slice(-6).toUpperCase()} for "${purchase.productName}" has been successfully completed.`,
+          type: "order",
+          relatedId: id,
+          link: "https://acctempire.com/orders"
+        });
+      } catch (notifErr) {
+        console.error("Failed to send completion notifications:", notifErr);
+      }
+
       res.json({ success: true, message: "Order completed & commission shared" });
     } catch (txErr) {
       console.error(`[Update Status] Transaction failed for order ${id}:`, txErr.message);

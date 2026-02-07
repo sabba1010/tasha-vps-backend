@@ -94,15 +94,20 @@ router.post("/announcement", async (req, res) => {
   }
 });
 
+const { sendNotification } = require("../utils/notification");
+
 // --- ২. স্পেসিফিক নোটিফিকেশন ---
 router.post("/notify", async (req, res) => {
   try {
-    const data = { 
-      ...req.body, 
-      createdAt: new Date(),
-      read: false 
-    };
-    const result = await notification.insertOne(data);
+    const { userEmail, title, message, type, relatedId, link } = req.body;
+    const result = await sendNotification(req.app, {
+      userEmail,
+      title,
+      message,
+      type,
+      relatedId,
+      link
+    });
     res.json(result);
   } catch (err) {
     res.status(500).send(err);

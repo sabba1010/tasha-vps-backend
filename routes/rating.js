@@ -34,16 +34,16 @@ router.post("/create", async (req, res) => {
 
     // Validation
     if (!orderId || !buyerEmail || !sellerEmail || !rating || !message) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Missing required fields" 
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields"
       });
     }
 
     if (rating < 1 || rating > 5) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Rating must be between 1 and 5" 
+      return res.status(400).json({
+        success: false,
+        message: "Rating must be between 1 and 5"
       });
     }
 
@@ -54,9 +54,9 @@ router.post("/create", async (req, res) => {
     });
 
     if (existingReview) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "You have already reviewed this order" 
+      return res.status(400).json({
+        success: false,
+        message: "You have already reviewed this order"
       });
     }
 
@@ -74,16 +74,31 @@ router.post("/create", async (req, res) => {
 
     const result = await ratingCollection.insertOne(newRating);
 
-    res.status(201).json({ 
-      success: true, 
-      message: "Review submitted successfully", 
-      ratingId: result.insertedId 
+    // Notify Seller
+    try {
+      const { sendNotification } = require("../utils/notification");
+      await sendNotification(req.app, {
+        userEmail: sellerEmail,
+        title: "New Review Received",
+        message: `A buyer left a ${rating}-star review for "${productName || "your product"}".`,
+        type: "rating",
+        relatedId: orderId,
+        link: "https://acctempire.com/seller-orders"
+      });
+    } catch (notifErr) {
+      console.error("Failed to notify seller of new rating:", notifErr);
+    }
+
+    res.status(201).json({
+      success: true,
+      message: "Review submitted successfully",
+      ratingId: result.insertedId
     });
   } catch (error) {
     console.error("Error creating rating:", error);
-    res.status(500).json({ 
-      success: false, 
-      message: "Server error while creating review" 
+    res.status(500).json({
+      success: false,
+      message: "Server error while creating review"
     });
   }
 });
@@ -113,9 +128,9 @@ router.get("/seller/:sellerEmail", async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching seller ratings:", error);
-    res.status(500).json({ 
-      success: false, 
-      message: "Server error while fetching ratings" 
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching ratings"
     });
   }
 });
@@ -145,9 +160,9 @@ router.get("/product/:productId", async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching product ratings:", error);
-    res.status(500).json({ 
-      success: false, 
-      message: "Server error while fetching ratings" 
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching ratings"
     });
   }
 });
@@ -172,9 +187,9 @@ router.get("/buyer/:buyerEmail", async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching buyer reviews:", error);
-    res.status(500).json({ 
-      success: false, 
-      message: "Server error while fetching reviews" 
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching reviews"
     });
   }
 });
@@ -188,16 +203,16 @@ router.put("/update/:ratingId", async (req, res) => {
     const { rating, message } = req.body;
 
     if (!ObjectId.isValid(ratingId)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Invalid rating ID" 
+      return res.status(400).json({
+        success: false,
+        message: "Invalid rating ID"
       });
     }
 
     if (rating && (rating < 1 || rating > 5)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Rating must be between 1 and 5" 
+      return res.status(400).json({
+        success: false,
+        message: "Rating must be between 1 and 5"
       });
     }
 
@@ -211,21 +226,21 @@ router.put("/update/:ratingId", async (req, res) => {
     );
 
     if (result.matchedCount === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "Rating not found" 
+      return res.status(404).json({
+        success: false,
+        message: "Rating not found"
       });
     }
 
-    res.status(200).json({ 
-      success: true, 
-      message: "Review updated successfully" 
+    res.status(200).json({
+      success: true,
+      message: "Review updated successfully"
     });
   } catch (error) {
     console.error("Error updating rating:", error);
-    res.status(500).json({ 
-      success: false, 
-      message: "Server error while updating review" 
+    res.status(500).json({
+      success: false,
+      message: "Server error while updating review"
     });
   }
 });
@@ -238,9 +253,9 @@ router.delete("/delete/:ratingId", async (req, res) => {
     const { ratingId } = req.params;
 
     if (!ObjectId.isValid(ratingId)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Invalid rating ID" 
+      return res.status(400).json({
+        success: false,
+        message: "Invalid rating ID"
       });
     }
 
@@ -249,21 +264,21 @@ router.delete("/delete/:ratingId", async (req, res) => {
     });
 
     if (result.deletedCount === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "Rating not found" 
+      return res.status(404).json({
+        success: false,
+        message: "Rating not found"
       });
     }
 
-    res.status(200).json({ 
-      success: true, 
-      message: "Review deleted successfully" 
+    res.status(200).json({
+      success: true,
+      message: "Review deleted successfully"
     });
   } catch (error) {
     console.error("Error deleting rating:", error);
-    res.status(500).json({ 
-      success: false, 
-      message: "Server error while deleting review" 
+    res.status(500).json({
+      success: false,
+      message: "Server error while deleting review"
     });
   }
 });
@@ -285,9 +300,9 @@ router.get("/all/all", async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching all ratings:", error);
-    res.status(500).json({ 
-      success: false, 
-      message: "Server error while fetching ratings" 
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching ratings"
     });
   }
 });
