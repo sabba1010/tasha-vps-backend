@@ -1,5 +1,6 @@
 const { MongoClient } = require("mongodb");
 const { sendEmail, getNotificationTemplate } = require("./email");
+const { sendWhatsAppMessage } = require("./whatsapp");
 
 const MONGO_URI = process.env.MONGO_URI;
 const client = new MongoClient(MONGO_URI);
@@ -56,12 +57,12 @@ const sendNotification = async (app, { userEmail, title, message, type, relatedI
             });
         }
 
+        // Fetch user once for both Email and WhatsApp
+        const user = await userCollection.findOne({ email: userEmail });
+        const name = user ? user.name : "User";
+
         // 3. Send Email
         try {
-            // Fetch user's name for a personalized email
-            const user = await userCollection.findOne({ email: userEmail });
-            const name = user ? user.name : "User";
-
             const emailHtml = getNotificationTemplate({
                 name,
                 title,
@@ -76,6 +77,22 @@ const sendNotification = async (app, { userEmail, title, message, type, relatedI
             });
         } catch (emailErr) {
             console.error("Failed to send notification email to:", userEmail, emailErr);
+        }
+
+        // 4. Send WhatsApp
+        try {
+            if (user && user.phone) {
+                let fullPhone = user.phone;
+                // If it doesn't start with +, prepend the dialCode if available
+                if (!fullPhone.startsWith("+") && user.dialCode) {
+                    fullPhone = user.dialCode + user.phone;
+                }
+
+                const waMessage = `*${title}*\n\n${message}`;
+                await sendWhatsAppMessage(fullPhone, waMessage);
+            }
+        } catch (waErr) {
+            console.error("Failed to send WhatsApp notification to:", userEmail, waErr);
         }
 
         return { success: true, notificationId: result.insertedId };
