@@ -344,8 +344,11 @@ app.patch("/update-balance", async (req, res) => {
     const settingsCol = db.collection("settings");
     const settingsDoc = await settingsCol.findOne({ _id: "config" });
     const rate = (settingsDoc && settingsDoc.buyerDepositRate) ? Number(settingsDoc.buyerDepositRate) : 0;
+    const depositRate = (settingsDoc && settingsDoc.depositRate) ? Number(settingsDoc.depositRate) : 1500;
+    const marketRate = (settingsDoc && settingsDoc.marketRate) ? Number(settingsDoc.marketRate) : 1480;
 
     let totalAdded = 0;
+    let totalExchangeProfit = 0;
     const paymentIds = [];
 
     for (const p of payments) {
@@ -353,14 +356,35 @@ app.patch("/update-balance", async (req, res) => {
       const fee = Number(((amt * rate) / 100).toFixed(2));
       const net = Number((amt - fee).toFixed(2));
 
+      // 🔥 Calculate Exchange Rate Profit (Deposit)
+      // User pays more NGN than market rate to get USD
+      // Example: depositRate=1500, marketRate=1480, user deposits $100
+      // Profit per dollar = (1500-1480)/1480 = 0.01351 or 1.35%
+      // Total profit = $100 × 0.01351 = $1.35
+      const profitPerDollar = (depositRate - marketRate) / marketRate;
+      const exchangeProfit = Number((amt * profitPerDollar).toFixed(2));
+      totalExchangeProfit += exchangeProfit;
+
       // Credit user with net amount
       await usersCollection.updateOne({ email }, { $inc: { balance: net } });
 
       // Mark this payment as credited and store computed values
-      await paymentsCollection.updateOne({ _id: p._id }, { $set: { credited: true, creditedAmount: net, fee: fee, feeRate: rate } });
+      await paymentsCollection.updateOne({ _id: p._id }, { $set: { credited: true, creditedAmount: net, fee: fee, feeRate: rate, exchangeProfit: exchangeProfit } });
 
       totalAdded += net;
       paymentIds.push(p._id);
+    }
+
+    // 🔥 Add total exchange profit to Admin's Platform Profit
+    if (totalExchangeProfit > 0) {
+      const adminUser = await usersCollection.findOne({ email: "admin@gmail.com" });
+      if (adminUser) {
+        await usersCollection.updateOne(
+          { email: "admin@gmail.com" },
+          { $inc: { platformProfit: totalExchangeProfit } }
+        );
+        console.log(`💰 Exchange profit from deposits: $${totalExchangeProfit.toFixed(2)} added to admin platformProfit`);
+      }
     }
 
     const updatedUser = await usersCollection.findOne({ email });
@@ -370,6 +394,7 @@ app.patch("/update-balance", async (req, res) => {
       updatedUser,
       totalAdded,
       creditedPayments: payments.length,
+      exchangeProfit: totalExchangeProfit
     });
   } catch (error) {
     console.error("Balance update error:", error);

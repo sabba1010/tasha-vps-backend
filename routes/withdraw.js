@@ -239,6 +239,43 @@ router.put("/approve/:id", async (req, res) => {
       }
     );
 
+    // 🔥 Calculate Exchange Rate Profit (Withdrawal)
+    // User receives less NGN than market rate for their USD
+    // Example: withdrawRate=1400, marketRate=1480, user withdraws $100
+    // User gets ₦140,000 but market value is ₦148,000
+    // Profit = (1480-1400) × 100 / 1480 = $5.40
+    try {
+      const settingsCol = db.collection("settings");
+      const settingsDoc = await settingsCol.findOne({ _id: "config" });
+      const marketRate = (settingsDoc && settingsDoc.marketRate) ? Number(settingsDoc.marketRate) : 1480;
+      const withdrawRate = withdrawal.appliedRate || 1400;
+      const amountUSD = Number(withdrawal.amountUSD || withdrawal.amount || 0);
+
+      if (amountUSD > 0 && marketRate > withdrawRate) {
+        const profitPerDollar = (marketRate - withdrawRate) / marketRate;
+        const exchangeProfit = Number((amountUSD * profitPerDollar).toFixed(2));
+
+        // Add to admin platformProfit
+        const adminUser = await userCollection.findOne({ email: "admin@gmail.com" });
+        if (adminUser && exchangeProfit > 0) {
+          await userCollection.updateOne(
+            { email: "admin@gmail.com" },
+            { $inc: { platformProfit: exchangeProfit } }
+          );
+          console.log(`💰 Exchange profit from withdrawal: $${exchangeProfit.toFixed(2)} added to admin platformProfit`);
+        }
+
+        // Store exchange profit in withdrawal record
+        await withdrawalCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { exchangeProfit: exchangeProfit } }
+        );
+      }
+    } catch (profitErr) {
+      console.error("Exchange profit calculation error:", profitErr);
+      // Don't fail the approval if profit tracking fails
+    }
+
     // SEND EMAIL NOTIFICATION
     try {
       const recipientEmail = withdrawal.userEmail;
