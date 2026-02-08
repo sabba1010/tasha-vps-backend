@@ -9,6 +9,7 @@ const MONGO_URI = process.env.MONGO_URI;
 const client = new MongoClient(MONGO_URI);
 const db = client.db("mydb");
 const usersCollection = db.collection("userCollection");
+const statsCollection = db.collection("systemStats");
 
 (async () => {
   try {
@@ -104,6 +105,12 @@ router.patch("/admin/update-referral-status", async (req, res) => {
         await usersCollection.updateOne(
           { _id: referrer._id },
           { $inc: { balance: 5 } }
+        );
+
+        // Deduct from System Turnover
+        await statsCollection.updateOne(
+          { _id: "global" },
+          { $inc: { totalTurnover: -5 }, $set: { updatedAt: new Date() } }
         );
       }
     }

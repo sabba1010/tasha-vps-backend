@@ -799,6 +799,7 @@ const MONGO_URI = process.env.MONGO_URI;
 const client = new MongoClient(MONGO_URI);
 const db = client.db("mydb");
 const users = db.collection("userCollection");
+const systemStats = db.collection("systemStats");
 
 // Connect to DB once
 async function run() {
@@ -988,6 +989,13 @@ router.post("/become-seller", async (req, res) => {
         await users.updateOne(
           { email: "admin@gmail.com" },
           { $inc: { balance: fee } },
+          { session }
+        );
+
+        // 3. Update Global Turnover
+        await systemStats.updateOne(
+          { _id: "global" },
+          { $inc: { totalTurnover: fee }, $set: { updatedAt: new Date() } },
           { session }
         );
       });
@@ -1216,6 +1224,12 @@ router.patch("/admin/update-referral-status", async (req, res) => {
       await users.updateOne(
         { _id: referrer._id },
         { $inc: { balance: 5 } }
+      );
+
+      // Deduct from System Turnover
+      await systemStats.updateOne(
+        { _id: "global" },
+        { $inc: { totalTurnover: -5 }, $set: { updatedAt: new Date() } }
       );
     }
 
