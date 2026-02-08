@@ -792,6 +792,8 @@ const express = require("express");
 const { MongoClient, ObjectId } = require("mongodb");
 const router = express.Router();
 
+const { getStats } = require("../utils/stats");
+
 // MongoDB Setup
 const MONGO_URI = process.env.MONGO_URI;
 const client = new MongoClient(MONGO_URI);
@@ -919,8 +921,23 @@ router.post("/login", async (req, res) => {
 
 // ================= GET ALL USERS =================
 router.get("/getall", async (req, res) => {
-  const allUsers = await users.find({}).toArray();
-  res.send(allUsers);
+  try {
+    const allUsers = await users.find({}).toArray();
+    const stats = await getStats();
+    const totalTurnover = stats ? stats.totalTurnover : 0;
+
+    const modifiedUsers = allUsers.map(user => {
+      if (user.role === "admin") {
+        return { ...user, balance: totalTurnover };
+      }
+      return user;
+    });
+
+    res.send(modifiedUsers);
+  } catch (error) {
+    console.error("Error in /getall:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
 });
 
 

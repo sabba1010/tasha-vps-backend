@@ -529,6 +529,28 @@ router.post("/admin", async (req, res) => {
       );
 
       newBalance = currentProfit - withdrawAmount;
+    } else if (withdrawalType === "turnover") {
+      const { getStats, updateStats } = require("../utils/stats");
+      const stats = await getStats();
+      const currentTurnover = stats ? stats.totalTurnover : 0;
+
+      if (currentTurnover < withdrawAmount) {
+        return res.status(422).json({
+          success: false,
+          message: `Insufficient turnover balance. Available: ${currentTurnover}, Requested: ${withdrawAmount}`
+        });
+      }
+
+      // Deduct from system stats
+      await updateStats({ totalTurnover: -withdrawAmount });
+
+      // Deduct from admin user balance record (to keep in sync)
+      await userCollection.updateOne(
+        { _id: adminUser._id },
+        { $inc: { balance: -withdrawAmount } }
+      );
+
+      newBalance = currentTurnover - withdrawAmount;
     }
 
     const withdrawalDoc = {
