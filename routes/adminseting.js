@@ -26,6 +26,8 @@ router.get("/financial-metrics", async (req, res) => {
         const response = {
             success: true,
             metrics: {
+                // Admin wallet balance now equals system turnover (full transaction volume)
+                adminWalletBalance: stats ? stats.totalTurnover : 0,
                 currentSystemTurnover: stats ? stats.totalTurnover : 0,
                 currentWalletPlatformProfit: adminUser ? (adminUser.platformProfit || 0) : 0,
                 adminSalesBalance: adminUser ? (adminUser.balance || 0) : 0,
