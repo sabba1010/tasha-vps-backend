@@ -515,7 +515,7 @@ router.patch("/update-status/:id", async (req, res) => {
         const pInside = await purchaseCollection.findOne({ _id: new ObjectId(id) }, { session });
         if (pInside.status === "completed") return; // Already done
 
-        const amount = pInside.price || pInside.totalPrice || 0;
+        const amount = Number(pInside.price || pInside.totalPrice || 0);
         const sellerEmail = pInside.sellerEmail;
         
         await purchaseCollection.updateOne({ _id: new ObjectId(id) }, { $set: { status: "completed", completedAt: new Date() } }, { session });
