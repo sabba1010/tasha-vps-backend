@@ -401,6 +401,4 @@ app.patch("/update-balance", async (req, res) => {
     res.status(500).json({ message: "Server error during balance update" });
   }
 });
-
-
 module.exports = app;
