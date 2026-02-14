@@ -239,11 +239,7 @@ router.put("/approve/:id", async (req, res) => {
       }
     );
 
-    // 🔥 Calculate Exchange Rate Profit (Withdrawal)
-    // User receives less NGN than market rate for their USD
-    // Example: withdrawRate=1400, marketRate=1480, user withdraws $100
-    // User gets ₦140,000 but market value is ₦148,000
-    // Profit = (1480-1400) × 100 / 1480 = $5.40
+    // 🔥 Calculate and Update Stats
     try {
       const settingsCol = db.collection("settings");
       const settingsDoc = await settingsCol.findOne({ _id: "config" });
@@ -251,29 +247,42 @@ router.put("/approve/:id", async (req, res) => {
       const withdrawRate = withdrawal.appliedRate || 1400;
       const amountUSD = Number(withdrawal.amountUSD || withdrawal.amount || 0);
 
+      let exchangeProfit = 0;
       if (amountUSD > 0 && marketRate > withdrawRate) {
         const profitPerDollar = (marketRate - withdrawRate) / marketRate;
-        const exchangeProfit = Number((amountUSD * profitPerDollar).toFixed(2));
+        exchangeProfit = Number((amountUSD * profitPerDollar).toFixed(2));
+      }
 
-        // Add to admin platformProfit
-        const adminUser = await userCollection.findOne({ email: "admin@gmail.com" });
-        if (adminUser && exchangeProfit > 0) {
-          await userCollection.updateOne(
-            { email: "admin@gmail.com" },
-            { $inc: { platformProfit: exchangeProfit } }
-          );
-          console.log(`💰 Exchange profit from withdrawal: $${exchangeProfit.toFixed(2)} added to admin platformProfit`);
-        }
+      // Update statistics
+      const statsUpdates = {
+        totalTurnover: -amountUSD, // Money leaving the system
+        lifetimePlatformProfit: exchangeProfit
+      };
 
-        // Store exchange profit in withdrawal record
-        await withdrawalCollection.updateOne(
-          { _id: new ObjectId(id) },
-          { $set: { exchangeProfit: exchangeProfit } }
+      if (withdrawal.isAdminWithdrawal || withdrawal.userEmail === "admin@gmail.com") {
+        statsUpdates.totalAdminWithdrawn = amountUSD;
+      } else {
+        statsUpdates.totalSellerWithdrawn = amountUSD;
+      }
+
+      const { updateStats } = require("../utils/stats");
+      await updateStats(statsUpdates);
+
+      // Add exchange profit to admin's platformProfit record
+      if (exchangeProfit > 0) {
+        await userCollection.updateOne(
+          { email: "admin@gmail.com" },
+          { $inc: { platformProfit: exchangeProfit } }
         );
       }
+
+      // Store exchange profit in withdrawal record
+      await withdrawalCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { exchangeProfit: exchangeProfit } }
+      );
     } catch (profitErr) {
-      console.error("Exchange profit calculation error:", profitErr);
-      // Don't fail the approval if profit tracking fails
+      console.error("Stats update on approval error:", profitErr);
     }
 
     // SEND EMAIL NOTIFICATION
@@ -540,9 +549,6 @@ router.post("/admin", async (req, res) => {
           message: `Insufficient turnover balance. Available: ${currentTurnover}, Requested: ${withdrawAmount}`
         });
       }
-
-      // Deduct from system stats
-      await updateStats({ totalTurnover: -withdrawAmount });
 
       // Deduct from admin user balance record (to keep in sync)
       await userCollection.updateOne(

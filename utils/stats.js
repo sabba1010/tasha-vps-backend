@@ -21,6 +21,9 @@ async function getStatsCollection() {
                 totalTurnover: 0,
                 lifetimePlatformProfit: 0,
                 totalUserBalance: initialTotalBalance,
+                totalDeposits: 0,
+                totalAdminWithdrawn: 0,
+                totalSellerWithdrawn: 0,
                 updatedAt: new Date()
             });
         }

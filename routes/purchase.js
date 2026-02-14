@@ -96,11 +96,10 @@ let db, cartCollection, purchaseCollection, userCollection, productsCollection, 
                 }
 
                 // 4. Update Global Stats
-                // 4. Update Global Stats
+                const profitToAdd = order.sellerEmail === "admin@gmail.com" ? amount : platformFee;
                 await updateStatsLocal({
-                   totalTurnover: amount,
-                   lifetimePlatformProfit: platformFee,
-                   totalUserBalance: amount
+                   lifetimePlatformProfit: profitToAdd,
+                   totalUserBalance: 0 // Sales don't change total user balance (moves from buyer to seller)
                 }, session);
               });
               processedCount++;
@@ -548,10 +547,10 @@ router.patch("/update-status/:id", async (req, res) => {
         }
 
         // Update stats
+        const profitToAdd = sellerEmail === "admin@gmail.com" ? amount : platformFee;
         await updateStatsLocal({
-          totalTurnover: amount,
-          lifetimePlatformProfit: platformFee,
-          totalUserBalance: amount
+          lifetimePlatformProfit: profitToAdd,
+          totalUserBalance: 0 // Moved from buyer to seller, no net change in system
         }, session);
       });
 

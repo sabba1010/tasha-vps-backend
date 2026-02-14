@@ -26,13 +26,19 @@ router.get("/financial-metrics", async (req, res) => {
         const response = {
             success: true,
             metrics: {
-                // Admin wallet balance now equals system turnover (full transaction volume)
-                adminWalletBalance: stats ? stats.totalTurnover : 0,
-                currentSystemTurnover: stats ? stats.totalTurnover : 0,
-                currentWalletPlatformProfit: adminUser ? (adminUser.platformProfit || 0) : 0,
+                // Admin total balance = actual system liquidity (deposits - withdrawals)
+                adminWalletBalance: stats ? (stats.totalTurnover || 0) : 0,
+                currentSystemTurnover: stats ? (stats.totalTurnover || 0) : 0,
+
+                // Spent platform profit is tracked via stats.totalAdminWithdrawn
+                // Available Profit = Lifetime Earned - Already Withdrawn
+                currentWalletPlatformProfit: stats ? (Number(stats.lifetimePlatformProfit || 0) - Number(stats.totalAdminWithdrawn || 0)) : 0,
+
+                // Admin sales balance is the withdrawable portion of the admin's balance
                 adminSalesBalance: adminUser ? (adminUser.balance || 0) : 0,
-                lifetimePlatformProfit: stats ? stats.lifetimePlatformProfit : 0,
-                totalWalletBalanceHeldByUsers: stats ? stats.totalUserBalance : 0
+
+                lifetimePlatformProfit: stats ? (stats.lifetimePlatformProfit || 0) : 0,
+                totalWalletBalanceHeldByUsers: stats ? (stats.totalUserBalance || 0) : 0
             }
         };
 

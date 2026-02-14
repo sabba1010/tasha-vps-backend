@@ -347,8 +347,11 @@ app.patch("/update-balance", async (req, res) => {
     const depositRate = (settingsDoc && settingsDoc.depositRate) ? Number(settingsDoc.depositRate) : 1500;
     const marketRate = (settingsDoc && settingsDoc.marketRate) ? Number(settingsDoc.marketRate) : 1480;
 
+    const { updateStats } = require("../utils/stats");
     let totalAdded = 0;
     let totalExchangeProfit = 0;
+    let totalFees = 0;
+    let totalGrossDeposit = 0;
     const paymentIds = [];
 
     for (const p of payments) {
@@ -356,14 +359,12 @@ app.patch("/update-balance", async (req, res) => {
       const fee = Number(((amt * rate) / 100).toFixed(2));
       const net = Number((amt - fee).toFixed(2));
 
-      // 🔥 Calculate Exchange Rate Profit (Deposit)
-      // User pays more NGN than market rate to get USD
-      // Example: depositRate=1500, marketRate=1480, user deposits $100
-      // Profit per dollar = (1500-1480)/1480 = 0.01351 or 1.35%
-      // Total profit = $100 × 0.01351 = $1.35
       const profitPerDollar = (depositRate - marketRate) / marketRate;
       const exchangeProfit = Number((amt * profitPerDollar).toFixed(2));
+
       totalExchangeProfit += exchangeProfit;
+      totalFees += fee;
+      totalGrossDeposit += amt;
 
       // Credit user with net amount
       await usersCollection.updateOne({ email }, { $inc: { balance: net } });
@@ -375,15 +376,22 @@ app.patch("/update-balance", async (req, res) => {
       paymentIds.push(p._id);
     }
 
+    // 🔥 Update Global Stats
+    await updateStats({
+      totalTurnover: totalGrossDeposit, // Liquidity enters the system
+      totalDeposits: totalGrossDeposit,
+      lifetimePlatformProfit: totalFees + totalExchangeProfit, // Fees and Margins are profit
+      totalUserBalance: totalAdded
+    });
+
     // 🔥 Add total exchange profit to Admin's Platform Profit
     if (totalExchangeProfit > 0) {
       const adminUser = await usersCollection.findOne({ email: "admin@gmail.com" });
       if (adminUser) {
         await usersCollection.updateOne(
           { email: "admin@gmail.com" },
-          { $inc: { platformProfit: totalExchangeProfit } }
+          { $inc: { platformProfit: totalExchangeProfit + totalFees } } // Admin gets fees too
         );
-        console.log(`💰 Exchange profit from deposits: $${totalExchangeProfit.toFixed(2)} added to admin platformProfit`);
       }
     }
 
