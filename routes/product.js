@@ -218,7 +218,9 @@ router.get("/all-sells", async (req, res) => {
             },
             {
                 $addFields: {
-                    storeName: "$sellerInfo.storeName"
+                    storeName: "$sellerInfo.storeName",
+                    sellerUsername: "$sellerInfo.username",
+                    sellerName: "$sellerInfo.name"
                 }
             },
             {
@@ -270,7 +272,36 @@ router.get("/:id", async (req, res) => {
         if (!ObjectId.isValid(id)) {
             return res.status(400).json({ message: "Invalid product ID" });
         }
-        const product = await productCollection.findOne({ _id: new ObjectId(id) });
+        const product = await productCollection.aggregate([
+            { $match: { _id: new ObjectId(id) } },
+            {
+                $lookup: {
+                    from: "userCollection",
+                    localField: "userEmail",
+                    foreignField: "email",
+                    as: "sellerInfo"
+                }
+            },
+            {
+                $unwind: {
+                    path: "$sellerInfo",
+                    preserveNullAndEmptyArrays: true
+                }
+            },
+            {
+                $addFields: {
+                    storeName: "$sellerInfo.storeName",
+                    sellerUsername: "$sellerInfo.username",
+                    sellerName: "$sellerInfo.name"
+                }
+            },
+            {
+                $project: {
+                    sellerInfo: 0
+                }
+            }
+        ]).next();
+
         if (!product) {
             return res.status(404).json({ message: "Product not found" });
         }
@@ -482,11 +513,42 @@ router.get("/user-products/:email", async (req, res) => {
             return res.status(400).json({ message: "User email is required" });
         }
 
-        const products = await productCollection.find({
-            userEmail: email,
-            status: "active",
-            isVisible: { $ne: false }
-        }).sort({ _id: -1 }).toArray();
+        const products = await productCollection.aggregate([
+            {
+                $match: {
+                    userEmail: email,
+                    status: "active",
+                    isVisible: { $ne: false }
+                }
+            },
+            {
+                $lookup: {
+                    from: "userCollection",
+                    localField: "userEmail",
+                    foreignField: "email",
+                    as: "sellerInfo"
+                }
+            },
+            {
+                $unwind: {
+                    path: "$sellerInfo",
+                    preserveNullAndEmptyArrays: true
+                }
+            },
+            {
+                $addFields: {
+                    storeName: "$sellerInfo.storeName",
+                    sellerUsername: "$sellerInfo.username",
+                    sellerName: "$sellerInfo.name"
+                }
+            },
+            {
+                $project: {
+                    sellerInfo: 0
+                }
+            },
+            { $sort: { _id: -1 } }
+        ]).toArray();
 
         res.status(200).json({
             success: true,
