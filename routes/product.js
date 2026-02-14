@@ -188,10 +188,50 @@ router.post("/sell", async (req, res) => {
 });
 
 router.get("/all-sells", async (req, res) => {
+    const { status, userEmail } = req.query;
     try {
-        const allData = await productCollection.find({}).sort({ _id: -1 }).toArray();
+        // Build match object
+        let match = {};
+        if (status) {
+            match.status = status;
+            // For Marketplace (active), only show visible ads
+            if (status === "active") match.isVisible = { $ne: false };
+        }
+        if (userEmail) match.userEmail = userEmail;
+
+        // Using aggregate for joining store name
+        const allData = await productCollection.aggregate([
+            { $match: match },
+            {
+                $lookup: {
+                    from: "userCollection",
+                    localField: "userEmail",
+                    foreignField: "email",
+                    as: "sellerInfo"
+                }
+            },
+            {
+                $unwind: {
+                    path: "$sellerInfo",
+                    preserveNullAndEmptyArrays: true
+                }
+            },
+            {
+                $addFields: {
+                    storeName: "$sellerInfo.storeName"
+                }
+            },
+            {
+                $project: {
+                    sellerInfo: 0 // Clean up sensitive user data
+                }
+            },
+            { $sort: { _id: -1 } }
+        ]).toArray();
+
         res.status(200).send(allData);
     } catch (error) {
+        console.error("ALL SELLS ERROR:", error);
         res.status(500).send({ message: "Error fetching products" });
     }
 });
@@ -442,7 +482,11 @@ router.get("/user-products/:email", async (req, res) => {
             return res.status(400).json({ message: "User email is required" });
         }
 
-        const products = await productCollection.find({ userEmail: email }).sort({ _id: -1 }).toArray();
+        const products = await productCollection.find({
+            userEmail: email,
+            status: "active",
+            isVisible: { $ne: false }
+        }).sort({ _id: -1 }).toArray();
 
         res.status(200).json({
             success: true,

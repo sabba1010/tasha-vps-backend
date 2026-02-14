@@ -353,7 +353,7 @@ router.post("/post", async (req, res) => {
 
     const productUpdatePromises = cartItems.map(async (item) => {
       const pId = item.productId ? new ObjectId(item.productId) : new ObjectId(item._id);
-      await productsCollection.updateOne({ _id: pId }, { $set: { status: "Sold" } });
+      await productsCollection.updateOne({ _id: pId }, { $set: { status: "sold" } });
     });
     await Promise.all(productUpdatePromises);
 
@@ -412,7 +412,7 @@ router.post("/single-purchase", async (req, res) => {
     } catch (notifErr) {
       console.error("Failed to notify seller of new order:", notifErr);
     }
-    await productsCollection.updateOne({ _id: productObjectId }, { $set: { status: "ongoing" } });
+    await productsCollection.updateOne({ _id: productObjectId }, { $set: { status: "sold" } });
 
     res.status(200).json({ success: true, message: "Purchase successful" });
   } catch (error) {
