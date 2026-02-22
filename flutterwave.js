@@ -6,7 +6,18 @@ const { updateStats } = require("./utils/stats");
 const router = express.Router();
 
 const FLW_SECRET_KEY = process.env.FLW_SECRET_KEY;
+const FLW_PUBLIC_KEY = process.env.NEXT_PUBLIC_FLUTTERWAVE_PUBLIC_KEY;
 const MONGO_URI = process.env.MONGO_URI;
+
+if (FLW_SECRET_KEY) {
+  console.log(`[Flutterwave] Loaded Secret Key: ${FLW_SECRET_KEY.substring(0, 12)}...`);
+} else {
+  console.error("[Flutterwave] Secret Key MISSING in .env");
+}
+
+if (FLW_PUBLIC_KEY) {
+  console.log(`[Flutterwave] Loaded Public Key: ${FLW_PUBLIC_KEY.substring(0, 12)}...`);
+}
 
 // ================= MongoDB =================
 const client = new MongoClient(MONGO_URI);
