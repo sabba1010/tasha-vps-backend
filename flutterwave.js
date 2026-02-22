@@ -61,6 +61,10 @@ router.post("/create", async (req, res) => {
       customer: {
         email, // REQUIRED BY FLUTTERWAVE
       },
+      meta: {
+        amountUSD,
+        appliedRate: rate,
+      },
     };
 
     const response = await axios.post(
@@ -69,21 +73,9 @@ router.post("/create", async (req, res) => {
       { headers: { Authorization: `Bearer ${FLW_SECRET_KEY}` } }
     );
 
-    // 🔐 SOURCE OF TRUTH
-    await payments.insertOne({
-      tx_ref,
-      customerEmail: email,
-      amountUSD,
-      amountNGN,
-      appliedRate: rate,
-      amount: amountNGN, // legacy
-      status: "pending",
-      credited: false,
-      createdAt: new Date(),
-    });
-
     res.json({ success: true, link: response.data.data.link });
   } catch (err) {
+    console.error("Flutterwave create error:", err.response?.data || err.message);
     res.status(500).json({ success: false, message: err.message });
   }
 });
@@ -104,22 +96,49 @@ router.get("/verify", async (req, res) => {
     }
 
     // 🔥 OUR DB IS SOURCE OF TRUTH
-    const payment = await payments.findOne({ tx_ref });
-    if (!payment || payment.credited) {
+    let payment = await payments.findOne({ tx_ref });
+
+    if (payment && payment.credited) {
       return res.json({ success: true });
     }
 
-    await payments.updateOne(
-      { tx_ref },
-      {
-        $set: {
-          transactionId: data.id,
-          status: "successful",
-          credited: true,
-          verifiedAt: new Date(),
-        },
-      }
-    );
+    const { amount: amountNGN, customer, meta } = data;
+    const customerEmail = customer?.email;
+    const amountUSD = meta?.amountUSD ? Number(meta.amountUSD) : 0;
+    const appliedRate = meta?.appliedRate ? Number(meta.appliedRate) : 0;
+
+    if (!payment) {
+      // Create record for the first time on success
+      const newPayment = {
+        tx_ref,
+        transactionId: data.id,
+        customerEmail,
+        amountUSD,
+        amountNGN,
+        appliedRate,
+        amount: amountNGN,
+        method: "flutterwave",
+        status: "successful",
+        credited: true,
+        createdAt: new Date(),
+        verifiedAt: new Date(),
+      };
+      await payments.insertOne(newPayment);
+      payment = newPayment;
+    } else {
+      // Record exists (e.g. from a previous partial attempt or webhook)
+      await payments.updateOne(
+        { tx_ref },
+        {
+          $set: {
+            transactionId: data.id,
+            status: "successful",
+            credited: true,
+            verifiedAt: new Date(),
+          },
+        }
+      );
+    }
 
     // ✅ ADD BALANCE (IN USD)
     const creditAmount = payment.amountUSD || (payment.amount / (payment.appliedRate || 1));

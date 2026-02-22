@@ -168,7 +168,7 @@ app.patch("/payments/:id", async (req, res) => {
     // If approved → update user balance
     if (status === "Approved") {
       const user = await userCollection.findOne({
-        email: payment.email,
+        email: payment.email || payment.customerEmail,
       });
 
       if (user) {
