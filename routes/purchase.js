@@ -596,7 +596,7 @@ router.patch("/update-status/:id", async (req, res) => {
 
 // Helper function to parse delivery time strings
 function parseDeliveryTime(timeStr) {
-  if (!timeStr) return 14400000; // default 4h
+  if (!timeStr) return 3600000; // default 1h
   const match = timeStr.match(/(\d+)\s*(mins?|minutes?|h|hours?|d|days?)/i);
   if (match) {
     const num = parseInt(match[1]);
@@ -605,7 +605,7 @@ function parseDeliveryTime(timeStr) {
     if (unit.startsWith('h')) return num * 3600000;
     if (unit.startsWith('d')) return num * 86400000;
   }
-  return 14400000; // default 4h
+  return 3600000; // default 1h
 }
 
 router.get("/auto-confirm-check", async (req, res) => {
