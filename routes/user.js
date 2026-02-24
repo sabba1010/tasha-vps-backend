@@ -981,7 +981,16 @@ router.post("/become-seller", async (req, res) => {
         // 1. Deduct from user
         await users.updateOne(
           { email },
-          { $set: { balance: newBalance, role: "seller", subscribedPlan: "free", salesCredit: 10 } },
+          {
+            $set: {
+              balance: newBalance,
+              role: "seller",
+              subscribedPlan: "free",
+              salesCredit: 10,
+              planCredit: 10,
+              lastCreditResetAt: new Date()
+            }
+          },
           { session }
         );
 
@@ -1052,7 +1061,9 @@ router.post("/getall/:userId", async (req, res) => {
       if (newPlan && planCredits.hasOwnProperty(newPlan.toLowerCase())) {
         update.$set = {
           subscribedPlan: newPlan.toLowerCase(),
-          salesCredit: planCredits[newPlan.toLowerCase()]
+          salesCredit: planCredits[newPlan.toLowerCase()],
+          planCredit: planCredits[newPlan.toLowerCase()],
+          lastCreditResetAt: new Date()
         };
       } else if (creditAmount !== undefined) {
         // যদি আলাদা করে ক্রেডিট পাঠানো হয়
@@ -1128,8 +1139,10 @@ router.post("/upgrade-plan", async (req, res) => {
         $set: {
           subscribedPlan: normalizedPlan,
           salesCredit: salesCredit,
+          planCredit: salesCredit,
           balance: newBalance,
-          planUpdatedAt: new Date()
+          planUpdatedAt: new Date(),
+          lastCreditResetAt: new Date()
         }
       }
     );

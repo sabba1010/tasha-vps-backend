@@ -258,6 +258,50 @@ const PORT = 3200;
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📡 Socket.IO initialized and listening`);
+
+  // ---------------------------------------
+  // AUTOMATIC DAILY CREDIT RESET (Cron Job)
+  // Runs every day at 00:00 (Midnight) WAT
+  // ---------------------------------------
+  cron.schedule("0 0 * * *", async () => {
+    console.log("⏰ [CRON] Starting daily credit reset...");
+    try {
+      await connectDB();
+      const planCredits = {
+        free: 10,
+        basic: 20,
+        business: 30,
+        premium: 40
+      };
+
+      // Reset for all users who have a subscribedPlan
+      const sellers = await userCollection.find({ subscribedPlan: { $exists: true, $ne: null } }).toArray();
+
+      let updateCount = 0;
+      for (const seller of sellers) {
+        const plan = seller.subscribedPlan.toLowerCase();
+        const limit = seller.planCredit || planCredits[plan] || 0;
+
+        if (limit > 0) {
+          await userCollection.updateOne(
+            { _id: seller._id },
+            {
+              $set: {
+                salesCredit: limit,
+                lastCreditResetAt: new Date()
+              }
+            }
+          );
+          updateCount++;
+        }
+      }
+      console.log(`✅ [CRON] Daily reset complete. Updated ${updateCount} sellers.`);
+    } catch (error) {
+      console.error("❌ [CRON] Error during credit reset:", error);
+    }
+  }, {
+    timezone: "Africa/Lagos"
+  });
 });
 
 // Final export for testing or other uses

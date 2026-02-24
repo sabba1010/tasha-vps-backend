@@ -25,29 +25,37 @@ const userCollection = db.collection("userCollection");
 
 // Helper: Check and Reset Credits (24h Logic)
 async function checkAndResetCredits(user) {
-    if (!user.lastCreditResetAt || !user.planCredit) return user;
+    // If not a seller with a reset field, we skip
+    if (!user.subscribedPlan) return user;
 
-    const lastReset = new Date(user.lastCreditResetAt);
+    const planCredits = {
+        free: 10,
+        basic: 20,
+        business: 30,
+        premium: 40
+    };
+
     const now = new Date();
+    const lastReset = user.lastCreditResetAt ? new Date(user.lastCreditResetAt) : new Date(user.createdAt || now);
     const diffMs = now - lastReset;
     const diffHours = diffMs / (1000 * 60 * 60);
 
-    if (diffHours >= 24) {
-        // RESET LOGIC: Strict reset to plan limit (no stacking)
-        const newCredits = user.planCredit;
+    // If 24 hours passed OR they never had a reset field set
+    if (diffHours >= 24 || !user.lastCreditResetAt) {
+        const planLimit = user.planCredit || planCredits[user.subscribedPlan.toLowerCase()] || 0;
 
-        await userCollection.updateOne(
-            { _id: user._id },
-            {
-                $set: {
-                    salesCredit: newCredits,
-                    lastCreditResetAt: now
+        if (planLimit > 0) {
+            await userCollection.updateOne(
+                { _id: user._id },
+                {
+                    $set: {
+                        salesCredit: planLimit,
+                        lastCreditResetAt: now
+                    }
                 }
-            }
-        );
-
-        // Return updated user object
-        return { ...user, salesCredit: newCredits, lastCreditResetAt: now };
+            );
+            return { ...user, salesCredit: planLimit, lastCreditResetAt: now };
+        }
     }
 
     return user;
