@@ -94,7 +94,7 @@ router.post("/post", async (req, res) => {
       });
     }
 
-    // No transactions used to ensure compatibility with standalone MongoDB instances on Render
+    // Sequential updates without transactions for compatibility with Render/standalone DBs
     try {
       // 1. Deduct amount from user's balance
       const updateResult = await userCollection.updateOne(
@@ -180,20 +180,25 @@ router.post("/post", async (req, res) => {
             html: emailHtml,
           });
         }
-      } catch (error) {
-        console.error("Failed to send pending email:", error);
+      } catch (emailErr) {
+        console.error("Failed to send pending email:", emailErr);
       }
-    } catch (error) {
-      console.error("Withdrawal submission error:", error);
-      if (!res.headersSent) {
-        res.status(500).json({
-          success: false,
-          message: "Server error during withdrawal processing.",
-          error: error.message
-        });
-      }
+    } catch (innerError) {
+      // If balance deduction succeeded but something else failed, we ideally want to log it
+      console.error("Inner processing error:", innerError);
+      throw innerError; // Handled by outer catch
     }
-  });
+  } catch (error) {
+    console.error("Withdrawal submission error:", error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: "Server error during withdrawal processing.",
+        error: error.message
+      });
+    }
+  }
+});
 
 // PUT: Approve a withdrawal by ID (Manual Pay)
 // Endpoint: PUT /withdraw/approve/:id
