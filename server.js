@@ -113,8 +113,18 @@ app.post("/api/submit", async (req, res) => {
   }
 });
 
-// Get all payments
+// Get all payments (generic)
 app.get("/payments", async (req, res) => {
+  try {
+    const allPayments = await payments.find({}).toArray();
+    res.json(allPayments);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Alias used by frontend code – many components request /api/payments
+app.get("/api/payments", async (req, res) => {
   try {
     const allPayments = await payments.find({}).toArray();
     res.json(allPayments);
