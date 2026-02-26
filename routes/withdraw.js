@@ -94,113 +94,106 @@ router.post("/post", async (req, res) => {
       });
     }
 
-    // Use transaction for safety (balance deduct + request create)
-    const session = client.startSession();
+    // No transactions used to ensure compatibility with standalone MongoDB instances on Render
     try {
-      await session.withTransaction(async () => {
-        // 1. Deduct amount from user's balance
-        const updateResult = await userCollection.updateOne(
-          { _id: userObjectId },
-          { $inc: { balance: -withdrawAmount } },
-          { session }
-        );
+      // 1. Deduct amount from user's balance
+      const updateResult = await userCollection.updateOne(
+        { _id: userObjectId },
+        { $inc: { balance: -withdrawAmount } }
+      );
 
-        await updateStatsLocal({ totalUserBalance: -withdrawAmount }, session);
+      await updateStatsLocal({ totalUserBalance: -withdrawAmount }, null);
 
-        if (updateResult.modifiedCount === 0) {
-          throw new Error("Failed to update user balance");
-        }
+      if (updateResult.modifiedCount === 0) {
+        throw new Error("Failed to update user balance");
+      }
 
-        // 2. Create withdrawal record (Pending Approval)
-        const settingsCol = db.collection("settings");
-        const settingsDoc = await settingsCol.findOne({ _id: "config" });
-        // Fetch current rate
-        const withdrawRate = (settingsDoc && settingsDoc.withdrawRate) ? Number(settingsDoc.withdrawRate) : 1400;
+      // 2. Create withdrawal record (Pending Approval)
+      const settingsCol = db.collection("settings");
+      const settingsDoc = await settingsCol.findOne({ _id: "config" });
+      // Fetch current rate
+      const withdrawRate = (settingsDoc && settingsDoc.withdrawRate) ? Number(settingsDoc.withdrawRate) : 1400;
 
-        const feeAmount = 0; // No fees
-        const netAmountUSD = withdrawAmount;
-        const amountNGN = Math.round(netAmountUSD * withdrawRate);
+      const feeAmount = 0; // No fees
+      const netAmountUSD = withdrawAmount;
+      const amountNGN = Math.round(netAmountUSD * withdrawRate);
 
-        const withdrawalDoc = {
-          userId: userObjectId,
-          userEmail: user.email,
-          paymentMethod,
-          amount: withdrawAmount.toString(),
-          amountUSD: withdrawAmount,
-          amountNGN: amountNGN,
-          appliedRate: withdrawRate,
-          fee: "0",
-          netAmount: withdrawAmount.toString(),
-          netAmountNGN: amountNGN,
-          feeRate: 0,
-          currency,
-          accountNumber,
-          bankCode,
-          fullName,
-          bankName: bankName || null,
-          phoneNumber: phoneNumber || null,
-          email: email || user.email,
-          note: note || "",
-          status: "pending", // ALWAYS PENDING
-          adminNote: "",
-          createdAt: new Date(),
-          updatedAt: new Date()
-        };
+      const withdrawalDoc = {
+        userId: userObjectId,
+        userEmail: user.email,
+        paymentMethod,
+        amount: withdrawAmount.toString(),
+        amountUSD: withdrawAmount,
+        amountNGN: amountNGN,
+        appliedRate: withdrawRate,
+        fee: "0",
+        netAmount: withdrawAmount.toString(),
+        netAmountNGN: amountNGN,
+        feeRate: 0,
+        currency,
+        accountNumber,
+        bankCode,
+        fullName,
+        bankName: bankName || null,
+        phoneNumber: phoneNumber || null,
+        email: email || user.email,
+        note: note || "",
+        status: "pending", // ALWAYS PENDING
+        adminNote: "",
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
 
-        const insertResult = await withdrawalCollection.insertOne(withdrawalDoc, { session });
-        const withdrawalId = insertResult.insertedId;
+      const insertResult = await withdrawalCollection.insertOne(withdrawalDoc);
+      const withdrawalId = insertResult.insertedId;
 
-        res.status(201).json({
-          success: true,
-          message: "Withdrawal request submitted successfully. Waiting for admin approval.",
+      res.status(201).json({
+        success: true,
+        message: "Withdrawal request submitted successfully. Waiting for admin approval.",
+        withdrawalId: withdrawalId.toString(),
+        status: "pending"
+      });
+
+      // Emit socket event for real-time update
+      const io = req.app.get("io");
+      if (io) {
+        io.emit("withdrawal_status_update", {
+          userId: userObjectId.toString(),
           withdrawalId: withdrawalId.toString(),
-          status: "pending"
+          status: "pending",
+          newBalance: currentBalance - withdrawAmount
         });
+      }
 
-        // Emit socket event for real-time update
-        const io = req.app.get("io");
-        if (io) {
-          io.emit("withdrawal_status_update", {
-            userId: userObjectId.toString(),
-            withdrawalId: withdrawalId.toString(),
-            status: "pending",
-            newBalance: currentBalance - withdrawAmount
+      // SEND PENDING EMAIL NOTIFICATION
+      try {
+        const recipientEmail = user.email; // Account email (already fetched)
+        if (recipientEmail) {
+          const emailHtml = getWithdrawalPendingTemplate({
+            name: user.name || "User",
+            amountUSD: withdrawAmount,
+            transactionId: withdrawalId.toString()
+          });
+          await sendEmail({
+            to: recipientEmail,
+            subject: "Withdrawal Request Received",
+            html: emailHtml,
           });
         }
-
-        // SEND PENDING EMAIL NOTIFICATION
-        try {
-          const recipientEmail = user.email; // Account email (already fetched)
-          if (recipientEmail) {
-            const emailHtml = getWithdrawalPendingTemplate({
-              name: user.name || "User",
-              amountUSD: withdrawAmount,
-              transactionId: withdrawalId.toString()
-            });
-            await sendEmail({
-              to: recipientEmail,
-              subject: "Withdrawal Request Received",
-              html: emailHtml,
-            });
-          }
-        } catch (emailErr) {
-          console.error("Failed to send pending email:", emailErr);
-        }
-      });
-    } finally {
-      await session.endSession();
+      } catch (error) {
+        console.error("Failed to send pending email:", error);
+      }
+    } catch (error) {
+      console.error("Withdrawal submission error:", error);
+      if (!res.headersSent) {
+        res.status(500).json({
+          success: false,
+          message: "Server error during withdrawal processing.",
+          error: error.message
+        });
+      }
     }
-  } catch (error) {
-    console.error("Withdrawal submission error:", error);
-    if (!res.headersSent) {
-      res.status(500).json({
-        success: false,
-        message: "Server error during withdrawal processing.",
-        error: error.message
-      });
-    }
-  }
-});
+  });
 
 // PUT: Approve a withdrawal by ID (Manual Pay)
 // Endpoint: PUT /withdraw/approve/:id
