@@ -1001,10 +1001,23 @@ router.post("/become-seller", async (req, res) => {
           { session }
         );
 
-        // 3. Update Global Turnover
+        // 3. Update Global Turnover and Platform Profit
         await systemStats.updateOne(
           { _id: "global" },
-          { $inc: { totalTurnover: fee }, $set: { updatedAt: new Date() } },
+          {
+            $inc: {
+              totalTurnover: fee,
+              lifetimePlatformProfit: fee
+            },
+            $set: { updatedAt: new Date() }
+          },
+          { session }
+        );
+
+        // 4. Update Admin Platform Profit (balance already incremented above)
+        await users.updateOne(
+          { email: "admin@gmail.com" },
+          { $inc: { platformProfit: fee } },
           { session }
         );
       });
@@ -1076,6 +1089,20 @@ router.post("/getall/:userId", async (req, res) => {
         { session }
       );
 
+      // 4. Update Admin and Global Stats
+      if (cost > 0) {
+        await users.updateOne(
+          { email: "admin@gmail.com" },
+          { $inc: { balance: cost, platformProfit: cost } },
+          { session }
+        );
+        await systemStats.updateOne(
+          { _id: "global" },
+          { $inc: { totalTurnover: cost, lifetimePlatformProfit: cost }, $set: { updatedAt: new Date() } },
+          { session }
+        );
+      }
+
       return await users.findOne(
         { _id: new ObjectId(userId) },
         { session }
@@ -1146,6 +1173,18 @@ router.post("/upgrade-plan", async (req, res) => {
         }
       }
     );
+
+    // Update Admin and Global Stats
+    if (cost > 0 && result.modifiedCount > 0) {
+      await users.updateOne(
+        { email: "admin@gmail.com" },
+        { $inc: { balance: cost, platformProfit: cost } }
+      );
+      await systemStats.updateOne(
+        { _id: "global" },
+        { $inc: { totalTurnover: cost, lifetimePlatformProfit: cost }, $set: { updatedAt: new Date() } }
+      );
+    }
 
     if (result.modifiedCount > 0) {
       res.json({
@@ -1243,6 +1282,12 @@ router.patch("/admin/update-referral-status", async (req, res) => {
       await systemStats.updateOne(
         { _id: "global" },
         { $inc: { totalTurnover: -5 }, $set: { updatedAt: new Date() } }
+      );
+
+      // Deduct from Admin's wallet balance
+      await users.updateOne(
+        { email: "admin@gmail.com" },
+        { $inc: { balance: -5 } }
       );
     }
 
