@@ -80,24 +80,24 @@ let db, cartCollection, purchaseCollection, userCollection, productsCollection, 
                 const sellerShare = amount * 0.8;
 
                 if (order.sellerEmail === "admin@gmail.com") {
-                   // Admin sold: Balance gets sales (80%), Platform Profit gets fee (20%)
-                   // NOTE: We don't use adminSalesBalance anymore as 'balance' is now the withdrawable sales wallet.
+                   // Admin sold: Balance gets full amount (100%), Platform Profit gets fee (20%)
                    await userCollection.updateOne(
                        { email: "admin@gmail.com" }, 
-                       { $inc: { balance: sellerShare, platformProfit: platformFee } }, 
+                       { $inc: { balance: amount, platformProfit: platformFee } }, 
                        { session }
                    );
                 } else {
                    if (order.sellerEmail) {
                        await userCollection.updateOne({ email: order.sellerEmail }, { $inc: { balance: sellerShare } }, { session });
                    }
-                   // Standard sale: Fee goes to platformProfit (not balance)
-                   await userCollection.updateOne({ email: "admin@gmail.com" }, { $inc: { platformProfit: platformFee } }, { session });
+                   // Standard sale: Fee goes to both admin balance and platformProfit
+                   await userCollection.updateOne({ email: "admin@gmail.com" }, { $inc: { balance: platformFee, platformProfit: platformFee } }, { session });
                 }
 
                 // 4. Update Global Stats
-                const profitToAdd = order.sellerEmail === "admin@gmail.com" ? amount : platformFee;
+                const profitToAdd = platformFee; 
                 await updateStatsLocal({
+                   totalTurnover: profitToAdd,
                    lifetimePlatformProfit: profitToAdd,
                    totalUserBalance: 0 // Sales don't change total user balance (moves from buyer to seller)
                 }, session);
@@ -387,7 +387,7 @@ router.post("/single-purchase", async (req, res) => {
       buyerEmail,
       productName,
       price: amount,
-      sellerEmail: sellerEmail || "admin@example.com",
+      sellerEmail: sellerEmail || "admin@gmail.com",
       productId: productObjectId,
       purchaseDate: new Date(),
       status: "pending",
@@ -532,23 +532,24 @@ router.patch("/update-status/:id", async (req, res) => {
         const sellerShare = amount * 0.8;
 
         if (sellerEmail === "admin@gmail.com") {
-          // Admin sold: Balance gets sales (80%), Platform Profit gets fee (20%)
+          // Admin sold: Balance gets full amount (100%), Platform Profit gets fee (20%)
           await userCollection.updateOne(
               { email: "admin@gmail.com" }, 
-              { $inc: { balance: sellerShare, platformProfit: platformFee } }, 
+              { $inc: { balance: amount, platformProfit: platformFee } }, 
               { session }
           );
         } else {
           if (sellerEmail) {
             await userCollection.updateOne({ email: sellerEmail }, { $inc: { balance: sellerShare } }, { session });
           }
-           // Standard sale: Fee goes to platformProfit
-          await userCollection.updateOne({ email: "admin@gmail.com" }, { $inc: { platformProfit: platformFee } }, { session });
+           // Standard sale: Fee goes to both admin balance and platformProfit
+          await userCollection.updateOne({ email: "admin@gmail.com" }, { $inc: { balance: platformFee, platformProfit: platformFee } }, { session });
         }
 
         // Update stats
-        const profitToAdd = sellerEmail === "admin@gmail.com" ? amount : platformFee;
+        const profitToAdd = platformFee;
         await updateStatsLocal({
+          totalTurnover: profitToAdd,
           lifetimePlatformProfit: profitToAdd,
           totalUserBalance: 0 // Moved from buyer to seller, no net change in system
         }, session);

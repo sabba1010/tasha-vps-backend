@@ -184,15 +184,26 @@ app.patch("/payments/:id", async (req, res) => {
 
       if (user) {
         // Use amountUSD if available, otherwise fallback to amount
-        const creditAmount = payment.amountUSD || payment.amount;
+        const creditAmount = Number(payment.amountUSD || payment.amount || 0);
         await userCollection.updateOne(
           { _id: user._id },
           {
             $inc: {
-              balance: Number(creditAmount),
+              balance: creditAmount,
             },
           }
         );
+
+        // Update Global Stats
+        try {
+          const { updateStats } = require("./utils/stats");
+          await updateStats({
+            totalUserBalance: creditAmount,
+            totalDeposits: creditAmount
+          });
+        } catch (statsErr) {
+          console.error("Failed to update stats for deposit:", statsErr);
+        }
       }
     }
 

@@ -253,12 +253,12 @@ router.put("/approve/:id", async (req, res) => {
 
       // Update statistics
       const statsUpdates = {
-        totalTurnover: -amountUSD, // Money leaving the system
         lifetimePlatformProfit: exchangeProfit
       };
 
       if (withdrawal.isAdminWithdrawal || withdrawal.userEmail === "admin@gmail.com") {
         statsUpdates.totalAdminWithdrawn = amountUSD;
+        statsUpdates.totalTurnover = -amountUSD; // Reflect withdrawal in admin total balance widget
       } else {
         statsUpdates.totalSellerWithdrawn = amountUSD;
       }
