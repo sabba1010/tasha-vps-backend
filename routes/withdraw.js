@@ -59,6 +59,8 @@ router.post("/post", async (req, res) => {
       bankName
     } = req.body;
 
+    const finalBankName = bankName || bankCode; // Fallback to bankCode if bankName is missing
+
     // Strict Validation
     if (!userId || !paymentMethod || !accountNumber || !bankCode || !fullName) {
       return res.status(422).json({
@@ -134,7 +136,7 @@ router.post("/post", async (req, res) => {
         accountNumber,
         bankCode,
         fullName,
-        bankName: bankName || null,
+        bankName: finalBankName,
         phoneNumber: phoneNumber || null,
         email: email || user.email,
         note: note || "",
