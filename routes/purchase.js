@@ -86,6 +86,7 @@ let db, cartCollection, purchaseCollection, userCollection, productsCollection, 
                        { $inc: { balance: amount, platformProfit: platformFee } }, 
                        { session }
                    );
+                   
                 } else {
                    if (order.sellerEmail) {
                        await userCollection.updateOne({ email: order.sellerEmail }, { $inc: { balance: sellerShare } }, { session });
