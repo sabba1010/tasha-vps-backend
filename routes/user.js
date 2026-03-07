@@ -1278,16 +1278,16 @@ router.patch("/admin/update-referral-status", async (req, res) => {
         { $inc: { balance: 5 } }
       );
 
-      // Deduct from System Turnover
+      // Deduct from Lifetime Platform Profit (instead of Turnover)
       await systemStats.updateOne(
         { _id: "global" },
-        { $inc: { totalTurnover: -5 }, $set: { updatedAt: new Date() } }
+        { $inc: { lifetimePlatformProfit: -5 }, $set: { updatedAt: new Date() } }
       );
 
-      // Deduct from Admin's wallet balance
+      // Deduct from Admin's wallet balance and platformProfit
       await users.updateOne(
         { email: "admin@gmail.com" },
-        { $inc: { balance: -5 } }
+        { $inc: { balance: -5, platformProfit: -5 } }
       );
     }
 
