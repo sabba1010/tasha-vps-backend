@@ -219,9 +219,8 @@ router.get("/all-sells", async (req, res) => {
                 }
             },
             {
-                $unwind: {
-                    path: "$sellerInfo",
-                    preserveNullAndEmptyArrays: true
+                $addFields: {
+                    sellerInfo: { $arrayElemAt: ["$sellerInfo", 0] }
                 }
             },
             {
@@ -291,9 +290,8 @@ router.get("/:id", async (req, res) => {
                 }
             },
             {
-                $unwind: {
-                    path: "$sellerInfo",
-                    preserveNullAndEmptyArrays: true
+                $addFields: {
+                    sellerInfo: { $arrayElemAt: ["$sellerInfo", 0] }
                 }
             },
             {
@@ -538,9 +536,8 @@ router.get("/user-products/:email", async (req, res) => {
                 }
             },
             {
-                $unwind: {
-                    path: "$sellerInfo",
-                    preserveNullAndEmptyArrays: true
+                $addFields: {
+                    sellerInfo: { $arrayElemAt: ["$sellerInfo", 0] }
                 }
             },
             {
