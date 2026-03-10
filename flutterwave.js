@@ -57,7 +57,7 @@ router.post("/create", async (req, res) => {
       tx_ref,
       amount: amountNGN,
       currency: "NGN",
-      redirect_url: `http://localhost:3000/payment?tx_ref=${tx_ref}`,
+      redirect_url: `https://acctempire.com/payment?tx_ref=${tx_ref}`,
       customer: {
         email, // REQUIRED BY FLUTTERWAVE
       },
