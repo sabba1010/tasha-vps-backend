@@ -82,21 +82,21 @@ const adminChat = require("./routes/adminChat");
 const reputationRoute = require("./routes/reputation");
 
 app.use("/api/adminchat", adminChat);
-app.use("/flutterwave", flutterwaveRoutes);
-app.use("/korapay", korapayRoutes);
+app.use("/api/flutterwave", flutterwaveRoutes);
+app.use("/api/korapay", korapayRoutes);
 app.use("/api/user", userRoute);
 app.use("/api/settings", settingsRoute);
 app.use("/api/notification", notificationRoute);
-app.use("/product", productRoute);
-app.use("/chat", chatRoute);
-app.use("/cart", cartRoute);
+app.use("/api/product", productRoute);
+app.use("/api/chat", chatRoute);
+app.use("/api/cart", cartRoute);
 // app.use("/api", testPaymentRoute);
-app.use("/withdraw", withdrawRoute);
-app.use("/purchase", purchaseRoute);
-app.use("/referral", refarelRoute);
-app.use("/rating", ratingRoute);
+app.use("/api/withdraw", withdrawRoute);
+app.use("/api/purchase", purchaseRoute);
+app.use("/api/referral", refarelRoute);
+app.use("/api/rating", ratingRoute);
 app.use("/api/admin", adminsetingRoute);
-app.use("/reputation", reputationRoute);
+app.use("/api/reputation", reputationRoute);
 
 // ---------------------------------------
 // PAYMENTS API
@@ -114,16 +114,6 @@ app.post("/api/submit", async (req, res) => {
 });
 
 // Get all payments (generic)
-app.get("/payments", async (req, res) => {
-  try {
-    const allPayments = await payments.find({}).toArray();
-    res.json(allPayments);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Alias used by frontend code – many components request /api/payments
 app.get("/api/payments", async (req, res) => {
   try {
     const allPayments = await payments.find({}).toArray();
@@ -134,7 +124,7 @@ app.get("/api/payments", async (req, res) => {
 });
 
 // Get single payment
-app.get("/payments/:id", async (req, res) => {
+app.get("/api/payments/:id", async (req, res) => {
   try {
     const payment = await payments.findOne({
       _id: new ObjectId(req.params.id),
@@ -151,7 +141,7 @@ app.get("/payments/:id", async (req, res) => {
 });
 
 // Update payment status
-app.patch("/payments/:id", async (req, res) => {
+app.patch("/api/payments/:id", async (req, res) => {
   try {
     const { status } = req.body;
     const id = req.params.id;
@@ -176,8 +166,12 @@ app.patch("/payments/:id", async (req, res) => {
       }
     );
 
-    // If approved → update user balance
+    // If approved → update user balance (only if not already credited)
     if (status === "Approved") {
+      if (payment.credited) {
+        return res.json({ success: true, message: "Payment already credited" });
+      }
+
       const user = await userCollection.findOne({
         email: payment.email || payment.customerEmail,
       });
@@ -191,6 +185,9 @@ app.patch("/payments/:id", async (req, res) => {
             $inc: {
               balance: creditAmount,
             },
+            $set: {
+              credited: true // Mark as credited
+            }
           }
         );
 
@@ -199,7 +196,8 @@ app.patch("/payments/:id", async (req, res) => {
           const { updateStats } = require("./utils/stats");
           await updateStats({
             totalUserBalance: creditAmount,
-            totalDeposits: creditAmount
+            totalDeposits: creditAmount,
+            totalTurnover: creditAmount
           });
         } catch (statsErr) {
           console.error("Failed to update stats for deposit:", statsErr);
@@ -220,7 +218,7 @@ app.patch("/payments/:id", async (req, res) => {
 // ---------------------------------------
 // ICONS API
 // ---------------------------------------
-app.get("/icon-data", async (req, res) => {
+app.get("/api/icon-data", async (req, res) => {
   try {
     const data = await iconsdb.find({}).toArray();
     res.json({

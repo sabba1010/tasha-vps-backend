@@ -43,7 +43,7 @@ router.post("/create", async (req, res) => {
       amount: String(amountNGN), // Korapay requires string of NGN
       currency: "NGN",
       reference,
-      redirect_url: `https://tashadev.com/payment?reference=${reference}`,
+      redirect_url: `https://acctempire.com/payment?reference=${reference}`,
       customer: {
         email, // ✅ LOGIN USER EMAIL
       },
@@ -125,7 +125,11 @@ router.get("/verify", async (req, res) => {
       { email: payment.customerEmail },
       { $inc: { balance: Number(creditAmount.toFixed(2)) } }
     );
-    await updateStats({ totalUserBalance: Number(creditAmount.toFixed(2)) });
+    await updateStats({ 
+      totalUserBalance: Number(creditAmount.toFixed(2)),
+      totalDeposits: Number(creditAmount.toFixed(2)),
+      totalTurnover: Number(creditAmount.toFixed(2))
+    });
 
     res.json({ success: true });
   } catch (err) {
@@ -162,7 +166,11 @@ router.post("/webhook", async (req, res) => {
         { email: payment.customerEmail },
         { $inc: { balance: Number(creditAmount.toFixed(2)) } }
       );
-      await updateStats({ totalUserBalance: Number(creditAmount.toFixed(2)) });
+      await updateStats({ 
+        totalUserBalance: Number(creditAmount.toFixed(2)),
+        totalDeposits: Number(creditAmount.toFixed(2)),
+        totalTurnover: Number(creditAmount.toFixed(2))
+      });
     }
 
     res.sendStatus(200);

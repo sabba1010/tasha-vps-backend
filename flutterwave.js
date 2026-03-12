@@ -146,7 +146,11 @@ router.get("/verify", async (req, res) => {
       { email: payment.customerEmail },
       { $inc: { balance: Number(creditAmount.toFixed(2)) } }
     );
-    await updateStats({ totalUserBalance: Number(creditAmount.toFixed(2)) });
+    await updateStats({ 
+      totalUserBalance: Number(creditAmount.toFixed(2)),
+      totalDeposits: Number(creditAmount.toFixed(2)),
+      totalTurnover: Number(creditAmount.toFixed(2))
+    });
 
     res.json({ success: true });
   } catch (err) {
