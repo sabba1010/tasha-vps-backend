@@ -43,7 +43,7 @@ router.post("/create", async (req, res) => {
       amount: String(amountNGN), // Korapay requires string of NGN
       currency: "NGN",
       reference,
-      redirect_url: `https://acctempire.com/payment?reference=${reference}`,
+      redirect_url: `https://tashadev.com/payment?reference=${reference}`,
       customer: {
         email, // ✅ LOGIN USER EMAIL
       },
