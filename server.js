@@ -172,18 +172,21 @@ app.patch("/api/payments/:id", async (req, res) => {
         return res.json({ success: true, message: "Payment already credited" });
       }
 
+      const userEmail = payment.email || payment.customerEmail;
       const user = await userCollection.findOne({
-        email: payment.email || payment.customerEmail,
+        email: { $regex: `^${userEmail}$`, $options: "i" },
       });
 
       if (user) {
         // Use amountUSD if available, otherwise fallback to amount
         const creditAmount = Number(payment.amountUSD || payment.amount || 0);
-        await userCollection.updateOne(
+        const creditFixed = Number(creditAmount.toFixed(2));
+
+        const userUpdate = await userCollection.updateOne(
           { _id: user._id },
           {
             $inc: {
-              balance: creditAmount,
+              balance: creditFixed,
             },
             $set: {
               credited: true // Mark as credited
@@ -191,17 +194,24 @@ app.patch("/api/payments/:id", async (req, res) => {
           }
         );
 
-        // Update Global Stats
-        try {
-          const { updateStats } = require("./utils/stats");
-          await updateStats({
-            totalUserBalance: creditAmount,
-            totalDeposits: creditAmount,
-            totalTurnover: creditAmount
-          });
-        } catch (statsErr) {
-          console.error("Failed to update stats for deposit:", statsErr);
+        if (userUpdate.matchedCount > 0) {
+          console.log(`[Manual Approval] Successfully credited $${creditFixed} to ${userEmail}`);
+          // Update Global Stats
+          try {
+            const { updateStats } = require("./utils/stats");
+            await updateStats({
+              totalUserBalance: creditFixed,
+              totalDeposits: creditFixed,
+              totalTurnover: creditFixed
+            });
+          } catch (statsErr) {
+            console.error("[Manual Approval] Failed to update stats:", statsErr);
+          }
+        } else {
+          console.error(`[Manual Approval] FAILED to update user balance for: ${userEmail}`);
         }
+      } else {
+        console.error(`[Manual Approval] User NOT found for email: ${userEmail}`);
       }
     }
 

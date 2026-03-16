@@ -142,15 +142,29 @@ router.get("/verify", async (req, res) => {
 
     // ✅ ADD BALANCE (IN USD)
     const creditAmount = payment.amountUSD || (payment.amount / (payment.appliedRate || 1));
-    await users.updateOne(
-      { email: payment.customerEmail },
-      { $inc: { balance: Number(creditAmount.toFixed(2)) } }
+    const creditFixed = Number(creditAmount.toFixed(2));
+
+    const userUpdate = await users.updateOne(
+      { email: { $regex: `^${payment.customerEmail}$`, $options: "i" } },
+      { $inc: { balance: creditFixed } }
     );
-    await updateStats({ 
-      totalUserBalance: Number(creditAmount.toFixed(2)),
-      totalDeposits: Number(creditAmount.toFixed(2)),
-      totalTurnover: Number(creditAmount.toFixed(2))
-    });
+
+    if (userUpdate.matchedCount === 0) {
+      console.error(`[Flutterwave Verify] User NOT found for email: ${payment.customerEmail}. Balance NOT credited.`);
+      // We still return true to frontend because payment was successful, 
+      // but admin needs to know balance wasn't added automatically.
+    } else {
+      console.log(`[Flutterwave Verify] Successfully credited $${creditFixed} to ${payment.customerEmail}`);
+      try {
+        await updateStats({ 
+          totalUserBalance: creditFixed,
+          totalDeposits: creditFixed,
+          totalTurnover: creditFixed
+        });
+      } catch (statsErr) {
+        console.error("[Flutterwave Verify] Stats update failed:", statsErr.message);
+      }
+    }
 
     res.json({ success: true });
   } catch (err) {
