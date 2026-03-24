@@ -23,7 +23,7 @@ const users = db.collection("userCollection");
 // ================= CREATE PAYMENT =================
 router.post("/create", async (req, res) => {
   try {
-    const { amount, email } = req.body; // amount is in USD from frontend
+    const { amount, email, name } = req.body; // amount is in USD from frontend
 
     if (!amount || !email) {
       return res.status(400).json({ message: "Invalid payload" });
@@ -46,6 +46,7 @@ router.post("/create", async (req, res) => {
       redirect_url: `https://acctempire.com/payment?reference=${reference}`,
       customer: {
         email, // ✅ LOGIN USER EMAIL
+        name: name || "Customer",
       },
     };
 
