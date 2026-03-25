@@ -916,7 +916,7 @@ router.post("/login", async (req, res) => {
       .json({ success: false, message: "Wrong password" });
   }
 
-  res.json({ success: true, message: "Login successful", user });
+  return res.json({ success: true, message: "Login successful", user });
 });
 
 
