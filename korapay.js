@@ -1,5 +1,6 @@
 const express = require("express");
 const axios = require("axios");
+const crypto = require("crypto");
 const { MongoClient } = require("mongodb");
 const { updateStats } = require("./utils/stats");
 
@@ -156,11 +157,42 @@ router.get("/verify", async (req, res) => {
 // ================= WEBHOOK =================
 router.post("/webhook", async (req, res) => {
   try {
+    const signature = req.headers["x-korapay-signature"];
+    if (!signature) {
+      console.error("[Korapay Webhook] Missing x-korapay-signature header");
+      return res.sendStatus(200); // Stop here, but tell Kora OK
+    }
+
+    // Verify Signature using raw body if available
+    const payload = req.rawBody || JSON.stringify(req.body);
+    const hash = crypto
+      .createHmac("sha256", KORAPAY_SECRET_KEY)
+      .update(payload)
+      .digest("hex");
+
+    if (hash !== signature) {
+      console.error("[Korapay Webhook] Invalid signature mismatch.");
+      return res.sendStatus(200);
+    }
+
     const data = req.body?.data;
-    if (!data?.reference) return res.sendStatus(200);
+    if (!data?.reference) {
+      console.log("[Korapay Webhook] No reference found in payload");
+      return res.sendStatus(200);
+    }
+
+    console.log(`[Korapay Webhook] Received for ref: ${data.reference}, status: ${data.status}`);
 
     const payment = await payments.findOne({ reference: data.reference });
-    if (!payment || payment.credited) return res.sendStatus(200);
+    if (!payment) {
+      console.error(`[Korapay Webhook] Payment NOT found for reference: ${data.reference}`);
+      return res.sendStatus(200);
+    }
+
+    if (payment.credited) {
+      console.log(`[Korapay Webhook] Payment already credited for ref: ${data.reference}`);
+      return res.sendStatus(200);
+    }
 
     if (data.status === "successful") {
       await payments.updateOne(
@@ -168,6 +200,7 @@ router.post("/webhook", async (req, res) => {
         {
           $set: {
             status: "successful",
+            transactionId: data.id, // 🛑 CRITICAL FIX
             credited: true,
             webhookReceived: true,
             verifiedAt: new Date(),
