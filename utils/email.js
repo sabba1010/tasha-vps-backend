@@ -342,10 +342,65 @@ const getNotificationTemplate = ({ name, title, message, link }) => {
     `;
 };
 
+/**
+ * Get the password reset email template.
+ * @param {Object} data - Reset details
+ * @param {string} data.name - User's name
+ * @param {string} data.resetUrl - URL to reset password
+ * @returns {string} - HTML email template
+ */
+const getPasswordResetTemplate = ({ name, resetUrl }) => {
+    return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Reset Your Password</title>
+        <style>
+            body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #0c0c0c; color: #ffffff; }
+            .container { max-width: 600px; margin: 20px auto; background-color: #141414; border-radius: 12px; overflow: hidden; border: 1px solid #222; }
+            .header { padding: 40px 20px; text-align: center; background: linear-gradient(135deg, #1a1a1a 0%, #0c0c0c 100%); border-bottom: 1px solid #222; }
+            .content { padding: 40px 30px; }
+            h1 { color: #ffffff; font-size: 24px; margin: 0 0 10px; font-weight: 700; }
+            p { color: #a0a0a0; font-size: 16px; line-height: 1.6; margin: 0 0 20px; }
+            .info-box { background-color: #1e1e1e; border-radius: 8px; padding: 25px; margin: 30px 0; border: 1px solid #333; text-align: center; }
+            .btn-container { text-align: center; margin-top: 35px; }
+            .btn { background-color: #ff4d00; color: #ffffff; padding: 14px 35px; text-decoration: none; font-weight: 700; border-radius: 8px; display: inline-block; transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(255, 77, 0, 0.3); }
+            .footer { padding: 30px; text-align: center; font-size: 13px; color: #555; background-color: #0c0c0c; border-top: 1px solid #222; }
+            .footer a { color: #ff4d00; text-decoration: none; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <div style="font-size: 28px; font-weight: 800; color: #ff4d00; letter-spacing: -1px;">AcctEmpire</div>
+            </div>
+            <div class="content">
+                <h1>Password Reset Request</h1>
+                <p>Hello ${name},</p>
+                <p>We received a request to reset your password for your AcctEmpire account. Click the button below to proceed. This link will expire in 1 hour.</p>
+                
+                <div class="btn-container">
+                    <a href="${resetUrl}" class="btn">Reset Password</a>
+                </div>
+
+                <p style="margin-top: 30px; font-size: 14px;">If you didn't request this, you can safely ignore this email. Your password will remain unchanged.</p>
+            </div>
+            <div class="footer">
+                <p>If you have questions, please contact <a href="mailto:help@acctempire.com">help@acctempire.com</a></p>
+                <p>&copy; ${new Date().getFullYear()} AcctEmpire Team</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    `;
+};
+
 module.exports = {
     sendEmail,
     getWithdrawalSuccessTemplate,
     getWithdrawalDeclineTemplate,
     getWithdrawalPendingTemplate,
     getNotificationTemplate,
+    getPasswordResetTemplate,
 };

@@ -800,6 +800,8 @@ const client = new MongoClient(MONGO_URI);
 const db = client.db("mydb");
 const users = db.collection("userCollection");
 const systemStats = db.collection("systemStats");
+const crypto = require("crypto");
+const { sendEmail, getPasswordResetTemplate } = require("../utils/email");
 
 // Connect to DB once
 async function run() {
@@ -1591,5 +1593,101 @@ router.get("/all-changes/admin/list", async (req, res) => {
   }
 });
 
+
+
+
+
+// --- FORGOT PASSWORD ---
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ success: false, message: "Email is required" });
+
+    const user = await users.findOne({ email: email.trim().toLowerCase() });
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User with this email does not exist" });
+    }
+
+    // Generate token
+    const token = crypto.randomBytes(32).toString("hex");
+    const expires = new Date(Date.now() + 3600000); // 1 hour from now
+
+    await users.updateOne(
+      { _id: user._id },
+      { $set: { resetPasswordToken: token, resetPasswordExpires: expires } }
+    );
+
+    // Send Email
+    const resetUrl = `${process.env.FRONTEND_URL || "https://acctempire.com"}/reset-password/${token}`;
+    const html = getPasswordResetTemplate({ name: user.name || "User", resetUrl });
+
+    const emailRes = await sendEmail({
+      to: user.email,
+      subject: "Password Reset Request - AcctEmpire",
+      html
+    });
+
+    if (emailRes.success) {
+      res.json({ success: true, message: "Reset link sent to your email" });
+    } else {
+      res.status(500).json({ success: false, message: "Failed to send reset email" });
+    }
+  } catch (error) {
+    console.error("Forgot info error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// --- VERIFY RESET TOKEN ---
+router.get("/verify-reset-token/:token", async (req, res) => {
+  try {
+    const { token } = req.params;
+    const user = await users.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: new Date() }
+    });
+
+    if (!user) {
+      return res.status(400).json({ success: false, message: "Token is invalid or has expired" });
+    }
+
+    res.json({ success: true, message: "Token is valid" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// --- RESET PASSWORD ---
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword) {
+      return res.status(400).json({ success: false, message: "Token and new password are required" });
+    }
+
+    const user = await users.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: new Date() }
+    });
+
+    if (!user) {
+      return res.status(400).json({ success: false, message: "Token is invalid or has expired" });
+    }
+
+    // Update password and clear token
+    await users.updateOne(
+      { _id: user._id },
+      {
+        $set: { password: newPassword },
+        $unset: { resetPasswordToken: "", resetPasswordExpires: "" }
+      }
+    );
+
+    res.json({ success: true, message: "Password has been reset successfully" });
+  } catch (error) {
+    console.error("Reset password error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
 module.exports = router;
