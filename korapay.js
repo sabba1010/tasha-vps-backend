@@ -112,7 +112,7 @@ router.get("/verify", async (req, res) => {
       // Create record for the first time on success (Like Flutterwave)
       const newPayment = {
         reference,
-        transactionId: data.id || data.transaction_reference || "N/A",
+        transactionId: data.id || data.transaction_reference || data.transaction_id || data.reference || data.trx || "N/A",
         customerEmail,
         amountUSD,
         amountNGN,
@@ -133,7 +133,7 @@ router.get("/verify", async (req, res) => {
         {
           $set: {
             status: "successful",
-            transactionId: data.id || data.transaction_reference || "N/A",
+            transactionId: data.id || data.transaction_reference || data.transaction_id || data.reference || data.trx || "N/A",
             credited: true,
             verifiedAt: new Date(),
           },
@@ -221,7 +221,7 @@ router.post("/webhook", async (req, res) => {
         // Create record on webhook success if not already verified
         const newPayment = {
           reference: data.reference,
-          transactionId: data.id || data.transaction_reference || "N/A",
+          transactionId: data.id || data.transaction_reference || data.transaction_id || data.reference || data.trx || "N/A",
           customerEmail,
           amountUSD,
           amountNGN,
@@ -242,7 +242,7 @@ router.post("/webhook", async (req, res) => {
           {
             $set: {
               status: "successful",
-              transactionId: data.id || data.transaction_reference || "N/A",
+              transactionId: data.id || data.transaction_reference || data.transaction_id || data.reference || data.trx || "N/A",
               credited: true,
               webhookReceived: true,
               verifiedAt: new Date(),
