@@ -90,7 +90,10 @@ router.get("/verify", async (req, res) => {
     );
 
     const data = kpRes.data.data;
-    if (data.status !== "successful") {
+    const isSuccess = data.status?.toLowerCase() === "success" || data.status?.toLowerCase() === "successful";
+    
+    if (!isSuccess) {
+      console.warn(`[Korapay Verify] Transaction not successful: ${data.status}`, data);
       return res.json({ success: false });
     }
 
@@ -109,7 +112,7 @@ router.get("/verify", async (req, res) => {
       // Create record for the first time on success (Like Flutterwave)
       const newPayment = {
         reference,
-        transactionId: data.id,
+        transactionId: data.id || data.transaction_reference || "N/A",
         customerEmail,
         amountUSD,
         amountNGN,
@@ -130,7 +133,7 @@ router.get("/verify", async (req, res) => {
         {
           $set: {
             status: "successful",
-            transactionId: data.id,
+            transactionId: data.id || data.transaction_reference || "N/A",
             credited: true,
             verifiedAt: new Date(),
           },
@@ -205,7 +208,9 @@ router.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    if (data.status === "successful") {
+    const isSuccess = data.status?.toLowerCase() === "success" || data.status?.toLowerCase() === "successful";
+
+    if (isSuccess) {
       const { customer, metadata } = data;
       const customerEmail = customer?.email;
       const amountUSD = metadata?.amountUSD ? Number(metadata.amountUSD) : 0;
@@ -216,7 +221,7 @@ router.post("/webhook", async (req, res) => {
         // Create record on webhook success if not already verified
         const newPayment = {
           reference: data.reference,
-          transactionId: data.id,
+          transactionId: data.id || data.transaction_reference || "N/A",
           customerEmail,
           amountUSD,
           amountNGN,
@@ -237,7 +242,7 @@ router.post("/webhook", async (req, res) => {
           {
             $set: {
               status: "successful",
-              transactionId: data.id,
+              transactionId: data.id || data.transaction_reference || "N/A",
               credited: true,
               webhookReceived: true,
               verifiedAt: new Date(),
