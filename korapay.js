@@ -83,7 +83,7 @@ router.get("/verify", async (req, res) => {
     if (!reference) return res.status(400).json({ success: false });
 
     const kpRes = await axios.get(
-      `https://api.korapay.com/merchant/api/v1/transactions/${reference}`,
+      `https://api.korapay.com/merchant/api/v1/charges/${reference}`,
       {
         headers: { Authorization: `Bearer ${KORAPAY_SECRET_KEY}` },
       }
