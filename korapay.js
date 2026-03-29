@@ -49,6 +49,11 @@ router.post("/create", async (req, res) => {
         email, // ✅ LOGIN USER EMAIL
         name: name || "Customer",
       },
+      metadata: {
+        amountUSD,
+        amountNGN,
+        appliedRate: rate,
+      },
     };
 
     const kpRes = await axios.post(
@@ -61,20 +66,6 @@ router.post("/create", async (req, res) => {
         },
       }
     );
-
-    // 🔐 SOURCE OF TRUTH
-    await payments.insertOne({
-      reference,
-      customerEmail: email,
-      amountUSD,
-      amountNGN,
-      appliedRate: rate,
-      amount: amountNGN, // Keep for legacy/compat
-      method: "korapay",
-      status: "pending",
-      credited: false,
-      createdAt: new Date(),
-    });
 
     res.json({
       checkoutUrl: kpRes.data.data.checkout_url,
@@ -103,23 +94,49 @@ router.get("/verify", async (req, res) => {
       return res.json({ success: false });
     }
 
-    const payment = await payments.findOne({ reference });
-    if (!payment || payment.credited) {
+    let payment = await payments.findOne({ reference });
+    
+    if (payment && payment.credited) {
       return res.json({ success: true });
     }
 
-    // ✅ UPDATE PAYMENT
-    await payments.updateOne(
-      { reference },
-      {
-        $set: {
-          status: "successful",
-          transactionId: data.id,
-          credited: true,
-          verifiedAt: new Date(),
-        },
-      }
-    );
+    const { amount: amountNGN, customer, metadata } = data;
+    const customerEmail = customer?.email;
+    const amountUSD = metadata?.amountUSD ? Number(metadata.amountUSD) : 0;
+    const appliedRate = metadata?.appliedRate ? Number(metadata.appliedRate) : 0;
+
+    if (!payment) {
+      // Create record for the first time on success (Like Flutterwave)
+      const newPayment = {
+        reference,
+        transactionId: data.id,
+        customerEmail,
+        amountUSD,
+        amountNGN,
+        appliedRate,
+        amount: amountNGN,
+        method: "korapay",
+        status: "successful",
+        credited: true,
+        createdAt: new Date(),
+        verifiedAt: new Date(),
+      };
+      await payments.insertOne(newPayment);
+      payment = newPayment;
+    } else {
+      // Record exists (unlikely in new flow but good for safety)
+      await payments.updateOne(
+        { reference },
+        {
+          $set: {
+            status: "successful",
+            transactionId: data.id,
+            credited: true,
+            verifiedAt: new Date(),
+          },
+        }
+      );
+    }
 
     // ✅ ADD BALANCE (IN USD)
     const creditAmount = payment.amountUSD || (payment.amount / (payment.appliedRate || 1));
@@ -132,8 +149,6 @@ router.get("/verify", async (req, res) => {
 
     if (userUpdate.matchedCount === 0) {
       console.error(`[Korapay Verify] User NOT found for email: ${payment.customerEmail}. Balance NOT credited.`);
-      // We still return true to frontend because payment was successful, 
-      // but admin needs to know balance wasn't added automatically.
     } else {
       console.log(`[Korapay Verify] Successfully credited $${creditFixed} to ${payment.customerEmail}`);
       try {
@@ -183,30 +198,53 @@ router.post("/webhook", async (req, res) => {
 
     console.log(`[Korapay Webhook] Received for ref: ${data.reference}, status: ${data.status}`);
 
-    const payment = await payments.findOne({ reference: data.reference });
-    if (!payment) {
-      console.error(`[Korapay Webhook] Payment NOT found for reference: ${data.reference}`);
-      return res.sendStatus(200);
-    }
-
-    if (payment.credited) {
+    let payment = await payments.findOne({ reference: data.reference });
+    
+    if (payment && payment.credited) {
       console.log(`[Korapay Webhook] Payment already credited for ref: ${data.reference}`);
       return res.sendStatus(200);
     }
 
     if (data.status === "successful") {
-      await payments.updateOne(
-        { reference: data.reference },
-        {
-          $set: {
-            status: "successful",
-            transactionId: data.id, // 🛑 CRITICAL FIX
-            credited: true,
-            webhookReceived: true,
-            verifiedAt: new Date(),
-          },
-        }
-      );
+      const { customer, metadata } = data;
+      const customerEmail = customer?.email;
+      const amountUSD = metadata?.amountUSD ? Number(metadata.amountUSD) : 0;
+      const amountNGN = data.amount;
+      const appliedRate = metadata?.appliedRate ? Number(metadata.appliedRate) : 0;
+
+      if (!payment) {
+        // Create record on webhook success if not already verified
+        const newPayment = {
+          reference: data.reference,
+          transactionId: data.id,
+          customerEmail,
+          amountUSD,
+          amountNGN,
+          appliedRate,
+          amount: amountNGN,
+          method: "korapay",
+          status: "successful",
+          credited: true,
+          webhookReceived: true,
+          createdAt: new Date(),
+          verifiedAt: new Date(),
+        };
+        await payments.insertOne(newPayment);
+        payment = newPayment;
+      } else {
+        await payments.updateOne(
+          { reference: data.reference },
+          {
+            $set: {
+              status: "successful",
+              transactionId: data.id,
+              credited: true,
+              webhookReceived: true,
+              verifiedAt: new Date(),
+            },
+          }
+        );
+      }
 
       // ✅ ADD BALANCE (IN USD)
       const creditAmount = payment.amountUSD || (payment.amount / (payment.appliedRate || 1));
