@@ -906,14 +906,14 @@ router.post("/login", async (req, res) => {
     return res.status(404).json({ success: false, message: "User not found" });
   }
 
-  if (user.status === "blocked") {
+  if (user.status === "blocked" || user.status === "block") {
     return res
       .status(403)
       .json({ success: false, message: "Your account has been blocked" });
   }
 
   if (user.password !== password) {
-    return res
+    return res  
       .status(400)
       .json({ success: false, message: "Wrong password" });
   }
