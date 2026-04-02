@@ -65,7 +65,10 @@ router.post("/create", async (req, res) => {
           "Content-Type": "application/json",
         },
       }
+
+
     );
+
 
     res.json({
       checkoutUrl: kpRes.data.data.checkout_url,
@@ -91,14 +94,14 @@ router.get("/verify", async (req, res) => {
 
     const data = kpRes.data.data;
     const isSuccess = data.status?.toLowerCase() === "success" || data.status?.toLowerCase() === "successful";
-    
+
     if (!isSuccess) {
       console.warn(`[Korapay Verify] Transaction not successful: ${data.status}`, data);
       return res.json({ success: false });
     }
 
     let payment = await payments.findOne({ reference });
-    
+
     if (payment && payment.credited) {
       return res.json({ success: true });
     }
@@ -155,7 +158,7 @@ router.get("/verify", async (req, res) => {
     } else {
       console.log(`[Korapay Verify] Successfully credited $${creditFixed} to ${payment.customerEmail}`);
       try {
-        await updateStats({ 
+        await updateStats({
           totalUserBalance: creditFixed,
           totalDeposits: creditFixed,
           totalTurnover: creditFixed
@@ -202,7 +205,7 @@ router.post("/webhook", async (req, res) => {
     console.log(`[Korapay Webhook] Received for ref: ${data.reference}, status: ${data.status}`);
 
     let payment = await payments.findOne({ reference: data.reference });
-    
+
     if (payment && payment.credited) {
       console.log(`[Korapay Webhook] Payment already credited for ref: ${data.reference}`);
       return res.sendStatus(200);
@@ -265,7 +268,7 @@ router.post("/webhook", async (req, res) => {
       } else {
         console.log(`[Korapay Webhook] Successfully credited $${creditFixed} to ${payment.customerEmail}`);
         try {
-          await updateStats({ 
+          await updateStats({
             totalUserBalance: creditFixed,
             totalDeposits: creditFixed,
             totalTurnover: creditFixed
