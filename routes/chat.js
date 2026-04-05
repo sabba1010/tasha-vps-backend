@@ -620,10 +620,11 @@ async function run() {
         // Real-time emits
         if (io) {
           try {
-            const count = await chatCollection.countDocuments({ 
-              receiverId: safeReceiverId, 
-              orderId: safeOrderId, 
-              read: { $ne: true } 
+            const count = await notificationCollection.countDocuments({ 
+              userEmail: safeReceiverId, 
+              relatedId: safeOrderId,
+              type: "chat", 
+              read: false 
             });
             io.to(safeReceiverId).emit("unread_count_update", { 
               orderId: safeOrderId, 
@@ -690,23 +691,26 @@ async function run() {
         const { userId } = req.params;
         if (!userId) return res.status(400).json({ error: "userId required" });
 
-        // Count messages where user is receiver and message is unread
+        const safeUserId = userId.toLowerCase();
+
+        // Count notifications where user is receiver, type is chat, and it is unread
         const pipeline = [
           {
             $match: {
-              receiverId: userId,
-              read: { $ne: true } // Messages not marked as read
+              userEmail: safeUserId,
+              type: "chat",
+              read: false
             }
           },
           {
             $group: {
-              _id: "$orderId",
+              _id: "$relatedId",
               count: { $sum: 1 }
             }
           }
         ];
 
-        const results = await chatCollection.aggregate(pipeline).toArray();
+        const results = await notificationCollection.aggregate(pipeline).toArray();
 
         // Transform to map { orderId: count }
         const counts = {};
@@ -730,16 +734,18 @@ async function run() {
       try {
         const { userId, orderId } = req.body;
         if (!userId || !orderId) return res.status(400).json({ error: "userId and orderId required" });
+        
+        const safeUserId = userId.toLowerCase();
 
         // Mark messages as read in chatCollection (where user is receiver)
         await chatCollection.updateMany(
-          { receiverId: userId, orderId, read: { $ne: true } },
+          { receiverId: safeUserId, orderId, read: { $ne: true } },
           { $set: { read: true } }
         );
 
-        // Also update notifications for backwards compatibility
+        // Also update notifications using relatedId!
         await notificationCollection.updateMany(
-          { userEmail: userId, orderId, read: false },
+          { userEmail: safeUserId, relatedId: orderId, type: "chat", read: false },
           { $set: { read: true } }
         );
 
