@@ -575,10 +575,14 @@ async function run() {
           ? `/uploads/${req.file.filename}`
           : null;
 
+        const safeSenderId = senderId.toString().toLowerCase();
+        const safeReceiverId = receiverId.toString().toLowerCase();
+        const safeOrderId = orderId.toString();
+
         const newMessage = {
-          senderId: senderId.toString(),
-          receiverId: receiverId.toString(),
-          orderId: orderId.toString(),
+          senderId: safeSenderId,
+          receiverId: safeReceiverId,
+          orderId: safeOrderId,
           message,
           imageUrl,
           timestamp: new Date(),
@@ -590,24 +594,24 @@ async function run() {
 
         // Update sender's presence
         await presenceCollection.updateOne(
-          { userId: senderId },
+          { userId: safeSenderId },
           { $set: { lastSeen: new Date(), status: "online" } },
           { upsert: true }
         );
         if (io) {
-          io.emit("user_status_update", { userId: senderId, status: "online", lastSeen: new Date() });
+          io.emit("user_status_update", { userId: safeSenderId, status: "online", lastSeen: new Date() });
         }
 
         // Send notification and email
         try {
-          const purchaseDoc = await db.collection("mypurchase").findOne({ _id: new ObjectId(orderId) });
+          const purchaseDoc = await db.collection("mypurchase").findOne({ _id: new ObjectId(safeOrderId) });
           await sendNotification(req.app, {
-            userEmail: receiverId,
-            title: `New message for Order #${orderId.slice(-6)}`,
+            userEmail: safeReceiverId,
+            title: `New message for Order #${safeOrderId.slice(-6)}`,
             message: message || (imageUrl ? "[Image]" : "Sent you a message."),
             type: "chat",
-            relatedId: orderId,
-            link: `https://acctempire.com/orders/${orderId}`
+            relatedId: safeOrderId,
+            link: `https://acctempire.com/orders/${safeOrderId}`
           });
         } catch (notifErr) {
           console.error("Failed to send chat notification:", notifErr);
@@ -617,19 +621,19 @@ async function run() {
         if (io) {
           try {
             const count = await chatCollection.countDocuments({ 
-              receiverId: receiverId.toString(), 
-              orderId: orderId.toString(), 
+              receiverId: safeReceiverId, 
+              orderId: safeOrderId, 
               read: { $ne: true } 
             });
-            io.to(receiverId.toString()).emit("unread_count_update", { 
-              orderId: orderId.toString(), 
+            io.to(safeReceiverId).emit("unread_count_update", { 
+              orderId: safeOrderId, 
               count 
             });
           } catch (e) {
             console.error("Failed to emit unread count update:", e);
           }
           
-          io.to(orderId).emit("receive_message", result.insertedId ? { ...newMessage, _id: result.insertedId } : newMessage);
+          io.to(safeOrderId).emit("receive_message", result.insertedId ? { ...newMessage, _id: result.insertedId } : newMessage);
         }
 
         res.status(201).json({
