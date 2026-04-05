@@ -1013,7 +1013,7 @@ router.post("/become-seller", async (req, res) => {
             },
             $set: { updatedAt: new Date() }
           },
-          { session }
+          { session, upsert: true }
         );
 
         // 4. Update Admin Platform Profit (balance already incremented above)
@@ -1100,8 +1100,11 @@ router.post("/getall/:userId", async (req, res) => {
         );
         await systemStats.updateOne(
           { _id: "global" },
-          { $inc: { totalTurnover: cost, lifetimePlatformProfit: cost }, $set: { updatedAt: new Date() } },
-          { session }
+          {
+            $inc: { totalTurnover: cost, lifetimePlatformProfit: cost },
+            $set: { updatedAt: new Date() }
+          },
+          { session, upsert: true }
         );
       }
 
@@ -1184,7 +1187,8 @@ router.post("/upgrade-plan", async (req, res) => {
       );
       await systemStats.updateOne(
         { _id: "global" },
-        { $inc: { totalTurnover: cost, lifetimePlatformProfit: cost }, $set: { updatedAt: new Date() } }
+        { $inc: { totalTurnover: cost, lifetimePlatformProfit: cost }, $set: { updatedAt: new Date() } },
+        { upsert: true }
       );
     }
 
