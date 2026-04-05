@@ -926,17 +926,7 @@ router.post("/login", async (req, res) => {
 router.get("/getall", async (req, res) => {
   try {
     const allUsers = await users.find({}).toArray();
-    const stats = await getStats();
-    const totalTurnover = stats ? stats.totalTurnover : 0;
-
-    const modifiedUsers = allUsers.map(user => {
-      if (user.role === "admin") {
-        return { ...user, balance: totalTurnover };
-      }
-      return user;
-    });
-
-    res.send(modifiedUsers);
+    res.send(allUsers);
   } catch (error) {
     console.error("Error in /getall:", error);
     res.status(500).json({ success: false, message: "Internal server error" });
@@ -998,7 +988,7 @@ router.post("/become-seller", async (req, res) => {
 
         // 2. Credit to admin
         await users.updateOne(
-          { email: "admin@gmail.com" },
+          { role: "admin" },
           { $inc: { balance: fee } },
           { session }
         );
@@ -1018,7 +1008,7 @@ router.post("/become-seller", async (req, res) => {
 
         // 4. Update Admin Platform Profit (balance already incremented above)
         await users.updateOne(
-          { email: "admin@gmail.com" },
+          { role: "admin" },
           { $inc: { platformProfit: fee } },
           { session }
         );
@@ -1094,7 +1084,7 @@ router.post("/getall/:userId", async (req, res) => {
       // 4. Update Admin and Global Stats
       if (cost > 0) {
         await users.updateOne(
-          { email: "admin@gmail.com" },
+          { role: "admin" },
           { $inc: { balance: cost, platformProfit: cost } },
           { session }
         );
@@ -1182,7 +1172,7 @@ router.post("/upgrade-plan", async (req, res) => {
     // Update Admin and Global Stats
     if (cost > 0 && result.modifiedCount > 0) {
       await users.updateOne(
-        { email: "admin@gmail.com" },
+        { role: "admin" },
         { $inc: { balance: cost, platformProfit: cost } }
       );
       await systemStats.updateOne(
@@ -1292,7 +1282,7 @@ router.patch("/admin/update-referral-status", async (req, res) => {
 
       // Deduct from Admin's wallet balance and platformProfit
       await users.updateOne(
-        { email: "admin@gmail.com" },
+        { role: "admin" },
         { $inc: { balance: -5, platformProfit: -5 } }
       );
     }

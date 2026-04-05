@@ -79,10 +79,13 @@ let db, cartCollection, purchaseCollection, userCollection, productsCollection, 
                 const platformFee = amount * 0.2;
                 const sellerShare = amount * 0.8;
 
-                if (order.sellerEmail === "admin@gmail.com") {
+                const sellerUser = await userCollection.findOne({ email: order.sellerEmail });
+                const isSellerAdmin = sellerUser && sellerUser.role === "admin";
+
+                if (isSellerAdmin) {
                    // Admin sold: Balance gets full amount (100%), Platform Profit gets fee (20%)
                    await userCollection.updateOne(
-                       { email: "admin@gmail.com" }, 
+                       { role: "admin" }, 
                        { $inc: { balance: amount, platformProfit: platformFee } }, 
                        { session }
                    );
@@ -92,7 +95,7 @@ let db, cartCollection, purchaseCollection, userCollection, productsCollection, 
                        await userCollection.updateOne({ email: order.sellerEmail }, { $inc: { balance: sellerShare } }, { session });
                    }
                    // Standard sale: Fee goes to both admin balance and platformProfit
-                   await userCollection.updateOne({ email: "admin@gmail.com" }, { $inc: { balance: platformFee, platformProfit: platformFee } }, { session });
+                   await userCollection.updateOne({ role: "admin" }, { $inc: { balance: platformFee, platformProfit: platformFee } }, { session });
                 }
 
                 // 4. Update Global Stats
@@ -241,9 +244,12 @@ router.patch("/report/mark-sold/:id", async (req, res) => {
       const platformFee = amount * 0.2;
       const sellerShare = amount * 0.8;
 
-      if (sellerEmail === "admin@gmail.com") {
+      const sellerUser = await userCollection.findOne({ email: sellerEmail });
+      const isSellerAdmin = sellerUser && sellerUser.role === "admin";
+
+      if (isSellerAdmin) {
         await userCollection.updateOne(
-            { email: "admin@gmail.com" }, 
+            { role: "admin" }, 
             { $inc: { balance: amount, platformProfit: platformFee } }, 
             { session }
         );
@@ -251,7 +257,7 @@ router.patch("/report/mark-sold/:id", async (req, res) => {
         if (sellerEmail) {
           await userCollection.updateOne({ email: sellerEmail }, { $inc: { balance: sellerShare } }, { session });
         }
-        await userCollection.updateOne({ email: "admin@gmail.com" }, { $inc: { balance: platformFee, platformProfit: platformFee } }, { session });
+        await userCollection.updateOne({ role: "admin" }, { $inc: { balance: platformFee, platformProfit: platformFee } }, { session });
       }
 
       await purchaseCollection.updateOne({ _id: order._id }, { $set: { status: "completed", completedAt: new Date() } }, { session });
@@ -303,11 +309,16 @@ router.patch("/report/refund/:id", async (req, res) => {
         const platformFee = Number(order.price) * 0.2;
         const sellerShare = Number(order.price) * 0.8;
 
-        if (order.sellerEmail === "admin@gmail.com") {
-          await userCollection.updateOne({ email: "admin@gmail.com" }, { $inc: { balance: -platformFee, adminSalesBalance: -sellerShare } }, { session });
+        const sellerUser = await userCollection.findOne({ email: order.sellerEmail });
+        const isSellerAdmin = sellerUser && sellerUser.role === "admin";
+
+        if (isSellerAdmin) {
+          await userCollection.updateOne({ role: "admin" }, { $inc: { balance: -platformFee, adminSalesBalance: -sellerShare } }, { session });
         } else {
-          await userCollection.updateOne({ email: order.sellerEmail }, { $inc: { balance: -sellerShare } }, { session });
-          await userCollection.updateOne({ email: "admin@gmail.com" }, { $inc: { balance: -platformFee } }, { session });
+          if (order.sellerEmail) {
+            await userCollection.updateOne({ email: order.sellerEmail }, { $inc: { balance: -sellerShare } }, { session });
+          }
+          await userCollection.updateOne({ role: "admin" }, { $inc: { balance: -platformFee } }, { session });
         }
 
         await updateStatsLocal({
@@ -425,7 +436,7 @@ router.post("/single-purchase", async (req, res) => {
       buyerEmail,
       productName,
       price: amount,
-      sellerEmail: sellerEmail || "admin@gmail.com",
+      sellerEmail: sellerEmail,
       productId: productObjectId,
       purchaseDate: new Date(),
       status: "pending",
@@ -569,10 +580,13 @@ router.patch("/update-status/:id", async (req, res) => {
         const platformFee = amount * 0.2;
         const sellerShare = amount * 0.8;
 
-        if (sellerEmail === "admin@gmail.com") {
+        const sellerUser = await userCollection.findOne({ email: sellerEmail });
+        const isSellerAdmin = sellerUser && sellerUser.role === "admin";
+
+        if (isSellerAdmin) {
           // Admin sold: Balance gets full amount (100%), Platform Profit gets fee (20%)
           await userCollection.updateOne(
-              { email: "admin@gmail.com" }, 
+              { role: "admin" }, 
               { $inc: { balance: amount, platformProfit: platformFee } }, 
               { session }
           );
@@ -581,7 +595,7 @@ router.patch("/update-status/:id", async (req, res) => {
             await userCollection.updateOne({ email: sellerEmail }, { $inc: { balance: sellerShare } }, { session });
           }
            // Standard sale: Fee goes to both admin balance and platformProfit
-          await userCollection.updateOne({ email: "admin@gmail.com" }, { $inc: { balance: platformFee, platformProfit: platformFee } }, { session });
+          await userCollection.updateOne({ role: "admin" }, { $inc: { balance: platformFee, platformProfit: platformFee } }, { session });
         }
 
         // Update stats

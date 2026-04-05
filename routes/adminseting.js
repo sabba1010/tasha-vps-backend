@@ -16,7 +16,7 @@ router.get("/financial-metrics", async (req, res) => {
         const stats = await getStats();
 
         // 2. Get Admin details (Platform Profit and Admin Sales Balance)
-        const adminUser = await userCollection.findOne({ email: "admin@gmail.com" });
+        const adminUser = await userCollection.findOne({ role: "admin" });
 
         // 3. Aggregate Total Wallet Balance Held by Users
         // (We track it in stats, but let's calculate it periodically or just trust the running sum)

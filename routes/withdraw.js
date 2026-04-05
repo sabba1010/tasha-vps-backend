@@ -258,7 +258,10 @@ router.put("/approve/:id", async (req, res) => {
         lifetimePlatformProfit: exchangeProfit
       };
 
-      if (withdrawal.isAdminWithdrawal || withdrawal.userEmail === "admin@gmail.com") {
+      const adminUserCheck = await userCollection.findOne({ _id: new ObjectId(withdrawal.userId) });
+      const isAdminWithdrawal = withdrawal.isAdminWithdrawal || (adminUserCheck && adminUserCheck.role === "admin");
+      
+      if (isAdminWithdrawal) {
         statsUpdates.totalAdminWithdrawn = amountUSD;
         statsUpdates.totalTurnover = -amountUSD; // Reflect withdrawal in admin total balance widget
       } else {
@@ -271,7 +274,7 @@ router.put("/approve/:id", async (req, res) => {
       // Add exchange profit to admin's platformProfit record
       if (exchangeProfit > 0) {
         await userCollection.updateOne(
-          { email: "admin@gmail.com" },
+          { role: "admin" },
           { $inc: { platformProfit: exchangeProfit } }
         );
       }
@@ -514,7 +517,7 @@ router.post("/admin", async (req, res) => {
     }
 
     const withdrawAmount = Number(amount);
-    const adminUser = await userCollection.findOne({ email: "admin@gmail.com" });
+    const adminUser = await userCollection.findOne({ role: "admin" });
 
     if (!adminUser) {
       return res.status(404).json({ success: false, message: "Admin user not found" });
