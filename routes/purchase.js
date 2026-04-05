@@ -218,24 +218,62 @@ router.patch("/report/update/:id", async (req, res) => {
 
 // ৫. মার্ক এজ সোল্ড (Mark as Sold)
 router.patch("/report/mark-sold/:id", async (req, res) => {
+  const session = client.startSession();
   try {
     const { id } = req.params;
-    const report = await reportCollection.findOne({ _id: new ObjectId(id) });
-    if (!report) return res.status(404).json({ success: false, message: "Report not found" });
+    
+    await session.withTransaction(async () => {
+      const report = await reportCollection.findOne({ _id: new ObjectId(id) }, { session });
+      if (!report) throw new Error("Report not found");
 
-    await purchaseCollection.updateOne(
-      { orderId: report.orderId },
-      { $set: { status: "completed" } }
-    );
+      const order = await purchaseCollection.findOne({ _id: new ObjectId(report.orderId) }, { session });
+      if (!order) throw new Error("Order not found");
+      
+      if (order.status === "completed") {
+         // Already completed and funds transferred
+         await reportCollection.updateOne({ _id: new ObjectId(id) }, { $set: { status: "Sold", updatedAt: new Date() } }, { session });
+         return;
+      }
 
-    await reportCollection.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { status: "Sold", updatedAt: new Date() } }
-    );
+      const amount = Number(order.price || order.totalPrice || 0);
+      const sellerEmail = order.sellerEmail;
+      
+      const platformFee = amount * 0.2;
+      const sellerShare = amount * 0.8;
 
-    res.json({ success: true, message: "Order marked as sold" });
+      if (sellerEmail === "admin@gmail.com") {
+        await userCollection.updateOne(
+            { email: "admin@gmail.com" }, 
+            { $inc: { balance: amount, platformProfit: platformFee } }, 
+            { session }
+        );
+      } else {
+        if (sellerEmail) {
+          await userCollection.updateOne({ email: sellerEmail }, { $inc: { balance: sellerShare } }, { session });
+        }
+        await userCollection.updateOne({ email: "admin@gmail.com" }, { $inc: { balance: platformFee, platformProfit: platformFee } }, { session });
+      }
+
+      await purchaseCollection.updateOne({ _id: order._id }, { $set: { status: "completed", completedAt: new Date() } }, { session });
+      
+      if (order.productId) {
+        await productsCollection.updateOne({ _id: new ObjectId(order.productId) }, { $set: { status: "completed", updatedAt: new Date() } }, { session });
+      }
+
+      await updateStatsLocal({
+        totalTurnover: amount,
+        lifetimePlatformProfit: platformFee,
+        totalUserBalance: 0
+      }, session);
+
+      await reportCollection.updateOne({ _id: new ObjectId(id) }, { $set: { status: "Sold", updatedAt: new Date() } }, { session });
+    });
+
+    res.json({ success: true, message: "Order marked as sold and funds transferred" });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  } finally {
+    await session.endSession();
   }
 });
 
@@ -661,7 +699,7 @@ async function updateStatsLocal(updates, session) {
   for (const [key, value] of Object.entries(updates)) {
       updateObj.$inc[key] = value;
   }
-  await statsCollection.updateOne({ _id: "global" }, updateObj, { session });
+  await statsCollection.updateOne({ _id: "global" }, updateObj, { session, upsert: true });
 }
 
 module.exports = router;
