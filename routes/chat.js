@@ -613,8 +613,22 @@ async function run() {
           console.error("Failed to send chat notification:", notifErr);
         }
 
-        // Real-time emit to chat window
+        // Real-time emits
         if (io) {
+          try {
+            const count = await chatCollection.countDocuments({ 
+              receiverId: receiverId.toString(), 
+              orderId: orderId.toString(), 
+              read: { $ne: true } 
+            });
+            io.to(receiverId.toString()).emit("unread_count_update", { 
+              orderId: orderId.toString(), 
+              count 
+            });
+          } catch (e) {
+            console.error("Failed to emit unread count update:", e);
+          }
+          
           io.to(orderId).emit("receive_message", result.insertedId ? { ...newMessage, _id: result.insertedId } : newMessage);
         }
 
