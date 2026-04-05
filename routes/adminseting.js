@@ -18,26 +18,31 @@ router.get("/financial-metrics", async (req, res) => {
         // 2. Get Admin details (Platform Profit and Admin Sales Balance)
         const adminUser = await userCollection.findOne({ role: "admin" });
 
-        // 3. Aggregate Total Wallet Balance Held by Users
-        // (We track it in stats, but let's calculate it periodically or just trust the running sum)
-        // For accuracy, let's also have an endpoint to recalculate it if needed, 
-        // but for now we trust stats.totalUserBalance.
+        // Calculate Admin's true sales balance (only from their own products)
+        const mypurchaseCollection = db.collection("mypurchase");
+        const adminEmail = adminUser ? adminUser.email : "admin@gmail.com";
+        const adminSalesDocs = await mypurchaseCollection.find({ sellerEmail: adminEmail, status: "completed" }).toArray();
+        let totalAdminSales = 0;
+        adminSalesDocs.forEach(order => {
+           totalAdminSales += Number(order.price || order.totalPrice || 0);
+        });
+
+        const lifetimePlatformProfit = stats ? (stats.lifetimePlatformProfit || 0) : 0;
+        const totalWithdrawn = stats ? (stats.totalAdminWithdrawn || 0) : 0;
 
         const response = {
             success: true,
             metrics: {
-                // Admin total balance = actual system liquidity (deposits - withdrawals)
-                adminWalletBalance: stats ? (stats.totalTurnover || 0) : 0,
-                currentSystemTurnover: stats ? (stats.totalTurnover || 0) : 0,
+                // Total Platform Earnings (Activation Fees, Plan Fees, 20% Commissions)
+                currentSystemTurnover: lifetimePlatformProfit,
 
-                // Spent platform profit is tracked via stats.totalAdminWithdrawn
-                // Available Profit = Lifetime Earned - Already Withdrawn
-                currentWalletPlatformProfit: stats ? (Number(stats.lifetimePlatformProfit || 0) - Number(stats.totalAdminWithdrawn || 0)) : 0,
+                // Admin Sales Balance (Revenue strictly from admin's own products)
+                adminSalesBalance: totalAdminSales,
 
-                // Admin sales balance is the withdrawable portion of the admin's balance
-                adminSalesBalance: adminUser ? (adminUser.balance || 0) : 0,
+                // Admin Total Balance (Admin Total Sales + Total Sales Volume) accounting for withdrawals via DB
+                currentWalletPlatformProfit: adminUser ? (adminUser.balance || 0) : 0,
 
-                lifetimePlatformProfit: stats ? (stats.lifetimePlatformProfit || 0) : 0,
+                lifetimePlatformProfit: lifetimePlatformProfit,
                 totalWalletBalanceHeldByUsers: stats ? (stats.totalUserBalance || 0) : 0
             }
         };
