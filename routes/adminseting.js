@@ -27,6 +27,7 @@ router.get("/financial-metrics", async (req, res) => {
            totalAdminSales += Number(order.price || order.totalPrice || 0);
         });
 
+        const totalTurnover = stats ? (stats.totalTurnover || 0) : 0;
         const lifetimePlatformProfit = stats ? (stats.lifetimePlatformProfit || 0) : 0;
         const totalWithdrawn = stats ? (stats.totalAdminWithdrawn || 0) : 0;
 
@@ -34,7 +35,7 @@ router.get("/financial-metrics", async (req, res) => {
             success: true,
             metrics: {
                 // Total Platform Earnings (Activation Fees, Plan Fees, 20% Commissions)
-                currentSystemTurnover: lifetimePlatformProfit,
+                currentSystemTurnover: totalTurnover * 0.8,
 
                 // Admin Sales Balance (Revenue strictly from admin's own products)
                 adminSalesBalance: totalAdminSales,
