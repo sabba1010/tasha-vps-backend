@@ -396,6 +396,90 @@ const getPasswordResetTemplate = ({ name, resetUrl }) => {
     `;
 };
 
+/**
+ * Get the product approval email template.
+ * @param {Object} data - Product details
+ * @param {string} data.name - User's name
+ * @param {string} data.productName - Product's name
+ * @param {string} data.category - Product's category
+ * @param {string|number} data.price - Product's price
+ * @param {string} data.description - Product's description
+ * @param {string} data.productUrl - Direct URL to view product on marketplace
+ * @returns {string} - HTML email template
+ */
+const getProductApprovalTemplate = ({ name, productName, category, price, description, productUrl }) => {
+    return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>New Product Active: ${productName}</title>
+        <style>
+            body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #0c0c0c; color: #ffffff; }
+            .container { max-width: 600px; margin: 20px auto; background-color: #141414; border-radius: 12px; overflow: hidden; border: 1px solid #222; }
+            .header { padding: 40px 20px; text-align: center; background: linear-gradient(135deg, #1a1a1a 0%, #0c0c0c 100%); border-bottom: 1px solid #222; }
+            .content { padding: 40px 30px; }
+            h1 { color: #ffffff; font-size: 24px; margin: 0 0 10px; font-weight: 700; }
+            p { color: #a0a0a0; font-size: 16px; line-height: 1.6; margin: 0 0 20px; }
+            .product-box { background-color: #1e1e1e; border-radius: 8px; padding: 25px; margin: 30px 0; border: 1px solid #333; }
+            .product-title { font-size: 18px; color: #ffffff; margin-bottom: 15px; font-weight: 700; border-bottom: 1px solid #222; padding-bottom: 10px; }
+            .product-detail-item { display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 15px; }
+            .product-label { color: #888; }
+            .product-value { color: #ffffff; font-weight: 600; }
+            .product-value.highlight { color: #ff4d00; }
+            .product-desc { background-color: #141414; border: 1px solid #222; border-radius: 6px; padding: 15px; color: #aaa; font-size: 14px; line-height: 1.5; margin-top: 15px; font-style: italic; }
+            .btn-container { text-align: center; margin-top: 35px; }
+            .btn { background-color: #ff4d00; color: #ffffff; padding: 14px 35px; text-decoration: none; font-weight: 700; border-radius: 8px; display: inline-block; transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(255, 77, 0, 0.3); }
+            .footer { padding: 30px; text-align: center; font-size: 13px; color: #555; background-color: #0c0c0c; border-top: 1px solid #222; }
+            .footer p { margin: 5px 0; color: #555; font-size: 13px; }
+            .footer a { color: #ff4d00; text-decoration: none; }
+            hr { border: 0; border-top: 1px solid #222; margin: 25px 0; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <div style="font-size: 28px; font-weight: 800; color: #ff4d00; letter-spacing: -1px;">AcctEmpire</div>
+            </div>
+            <div class="content">
+                <h1>Hi ${name},</h1>
+                <p>A new premium listing has just been approved by our admin team and is now available on the marketplace. Don't miss out on this deal!</p>
+                
+                <div class="product-box">
+                    <div class="product-title">${productName}</div>
+                    
+                    <div class="product-detail-item">
+                        <span class="product-label">Category:</span>
+                        <span class="product-value">${category}</span>
+                    </div>
+                    
+                    <div class="product-detail-item">
+                        <span class="product-label">Price:</span>
+                        <span class="product-value highlight">$${price}</span>
+                    </div>
+                    
+                    <div class="product-desc">
+                        ${description || "No description provided."}
+                    </div>
+                </div>
+
+                <div class="btn-container">
+                    <a href="${productUrl}" class="btn">View Product Page</a>
+                </div>
+            </div>
+            <div class="footer">
+                <p>This is an automatically generated email. Please do not reply.</p>
+                <p>If you face any issues, please contact us at <a href="mailto:help@acctempire.com">help@acctempire.com</a></p>
+                <hr>
+                <p style="font-size: 16px; color: #888;">Thank you for choosing AcctEmpire 🚀</p>
+                <p>&copy; ${new Date().getFullYear()} AcctEmpire Team</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    `;
+};
+
 module.exports = {
     sendEmail,
     getWithdrawalSuccessTemplate,
@@ -403,4 +487,5 @@ module.exports = {
     getWithdrawalPendingTemplate,
     getNotificationTemplate,
     getPasswordResetTemplate,
+    getProductApprovalTemplate,
 };

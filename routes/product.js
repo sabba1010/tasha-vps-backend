@@ -61,6 +61,58 @@ async function checkAndResetCredits(user) {
     return user;
 }
 
+// Helper: Broadcast product approval notification to all registered users in the background
+async function broadcastProductApprovalNotification(product) {
+    try {
+        const users = await userCollection.find({}, { projection: { email: 1, name: 1, username: 1 } }).toArray();
+        if (!users || users.length === 0) return;
+
+        const { sendEmail, getProductApprovalTemplate } = require("../utils/email");
+        const FRONTEND_URL = process.env.FRONTEND_URL || "https://acctempire.com";
+        const productUrl = `${FRONTEND_URL}/marketplace?productId=${product._id}`;
+
+        console.log(`[Product Notification] Starting email broadcast for approved product "${product.name}" to ${users.length} users.`);
+
+        const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+        const batchSize = 10;
+
+        for (let i = 0; i < users.length; i += batchSize) {
+            const batch = users.slice(i, i + batchSize);
+            
+            await Promise.all(batch.map(async (user) => {
+                if (!user.email) return;
+                const name = user.name || user.username || user.email.split("@")[0];
+                const html = getProductApprovalTemplate({
+                    name,
+                    productName: product.name,
+                    category: product.category,
+                    price: product.price,
+                    description: product.description,
+                    productUrl
+                });
+
+                try {
+                    await sendEmail({
+                        to: user.email,
+                        subject: `🔥 New Product Approved: ${product.name}`,
+                        html
+                    });
+                } catch (emailErr) {
+                    console.error(`[Product Notification] Failed to send email to ${user.email}:`, emailErr);
+                }
+            }));
+
+            if (i + batchSize < users.length) {
+                await delay(1000); // Wait 1 second between batches
+            }
+        }
+        console.log(`[Product Notification] Finished email broadcast for product "${product.name}".`);
+    } catch (err) {
+        console.error("[Product Notification] Error in broadcast:", err);
+    }
+}
+
+
 router.post("/sell", async (req, res) => {
     try {
         const { products } = req.body;
@@ -327,6 +379,12 @@ router.patch("/update-status/:id", async (req, res) => {
         }
 
         const filter = { _id: new ObjectId(id) };
+        const product = await productCollection.findOne(filter);
+
+        if (!product) {
+            return res.status(404).send({ message: "Product not found" });
+        }
+
         const updateDoc = {
             $set: {
                 status: status,
@@ -336,8 +394,11 @@ router.patch("/update-status/:id", async (req, res) => {
 
         const result = await productCollection.updateOne(filter, updateDoc);
 
-        if (result.matchedCount === 0) {
-            return res.status(404).send({ message: "Product not found" });
+        // If newly approved (i.e. updated status is active and it wasn't already active)
+        if (status === "active" && product.status !== "active") {
+            broadcastProductApprovalNotification(product).catch(err => {
+                console.error("[Product Notification] Failed to broadcast product approval email:", err);
+            });
         }
 
         res.status(200).send({
