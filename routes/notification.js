@@ -122,17 +122,19 @@ router.get("/getall", async (req, res) => {
     // If no userId provided, it means we want all notifications (e.g. for Admin Dashboard)
     let query = {};
     if (userId) {
+      const safeUserId = userId.toLowerCase();
       query = {
         $and: [
           {
             $or: [
               { userEmail: userId },
+              { userEmail: safeUserId },
               { target: "all" },
               { target: role },
               { target: role + "s" }
             ]
           },
-          { deletedBy: { $ne: userId } }
+          { deletedBy: { $nin: [userId, safeUserId] } }
         ]
       };
     }
@@ -151,11 +153,11 @@ router.delete("/clear-all/:email", async (req, res) => {
 
   try {
     const { role } = req.query;
-    // Instead of deleting, we add the user to 'deletedBy' array
-    // This allows global announcements to stay for others while being hidden for this user
+    const safeEmail = email.toLowerCase();
     const query = {
       $or: [
         { userEmail: email },
+        { userEmail: safeEmail },
         { target: "all" },
         { target: role },
         { target: role + "s" }
@@ -164,7 +166,7 @@ router.delete("/clear-all/:email", async (req, res) => {
 
     const result = await notification.updateMany(
       query,
-      { $addToSet: { deletedBy: email } }
+      { $addToSet: { deletedBy: safeEmail } }
     );
     
     res.json({ success: true, updatedCount: result.modifiedCount });
@@ -180,9 +182,13 @@ router.post("/mark-read", async (req, res) => {
   if (!email) return res.status(400).json({ error: "Email is required" });
 
   try {
+    const safeEmail = email.toLowerCase();
     // ১. সরাসরি ইউজারের ইমেইলে পাঠানো নোটিফিকেশনগুলো পুরোনো লজিক অনুযায়ী read: true করি
     await notification.updateMany(
-      { userEmail: email, read: false }, 
+      { 
+        $or: [ { userEmail: email }, { userEmail: safeEmail } ], 
+        read: false 
+      }, 
       { $set: { read: true } }
     );
 
@@ -196,13 +202,13 @@ router.post("/mark-read", async (req, res) => {
             { target: role + "s" }
           ]
         },
-        { readBy: { $ne: email } }
+        { readBy: { $nin: [email, safeEmail] } }
       ]
     };
 
     await notification.updateMany(
       announcementQuery,
-      { $addToSet: { readBy: email } }
+      { $addToSet: { readBy: safeEmail } }
     );
 
     res.json({ success: true });
