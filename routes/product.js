@@ -131,7 +131,6 @@ router.post("/sell", async (req, res) => {
 
         // Required fields
         const requiredFields = [
-            "category",
             "name",
             "description",
             "price",
@@ -676,7 +675,6 @@ module.exports = router;
 
 //     // Required fields (same as your old logic)
 //     const requiredFields = [
-//       "category",
 //       "name",
 //       "description",
 //       "price",

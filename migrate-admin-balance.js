@@ -1,5 +1,8 @@
+const dns = require("dns");
+dns.setServers(["8.8.8.8", "1.1.1.1"]);
 const { MongoClient } = require("mongodb");
-const MONGO_URI = "mongodb+srv://ataur_dev:QzSoy1IYdiSGSAgU@practicemongodb.zhvbu.mongodb.net/?appName=PracticeMongoDB";
+require("dotenv").config();
+const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://sabbahossain123_db_user:mhfHExR5j70bsfmo@cluster0.1o0zute.mongodb.net/?appName=Cluster0";
 const client = new MongoClient(MONGO_URI);
 
 async function run() {

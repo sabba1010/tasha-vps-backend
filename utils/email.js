@@ -450,7 +450,7 @@ const getProductApprovalTemplate = ({ name, productName, category, price, descri
                     
                     <div class="product-detail-item">
                         <span class="product-label">Category:</span>
-                        <span class="product-value">${category}</span>
+                        <span class="product-value">${category || "N/A"}</span>
                     </div>
                     
                     <div class="product-detail-item">
