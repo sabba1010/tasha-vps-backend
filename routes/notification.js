@@ -57,7 +57,6 @@ const MONGO_URI = process.env.MONGO_URI;
 
 // Mongo DB Connection
 const client = new MongoClient(MONGO_URI);
-
 const db = client.db("mydb");
 const notification = db.collection("notifiCollection");
 
