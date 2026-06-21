@@ -8,7 +8,6 @@ const router = express.Router();
 
 const MONGO_URI = process.env.MONGO_URI;
 
-
 // ===============================
 // Mongo Client Setup
 // ===============================
